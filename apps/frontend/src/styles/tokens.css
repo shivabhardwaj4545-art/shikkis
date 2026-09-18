@@ -1,0 +1,87 @@
+/* =============================================================================
+   SHIKKIS DESIGN TOKENS
+   All values from AGENTS.md. CSS custom properties on :root (light theme).
+   Dark theme overrides on [data-theme="dark"].
+
+   IMPORTANT: These variables are mapped 1:1 to Tailwind utilities in
+   tailwind.config.ts — any new token here must be registered there too.
+   ============================================================================= */
+
+:root {
+  /* ── Brand ───────────────────────────────────────────────────────────────── */
+  /* Brand colours are identical in light and dark — they are the identity. */
+  --brand-crimson: #9b1b30;
+  --brand-gold: #d4af37;
+
+  /* ── Semantic ─────────────────────────────────────────────────────────────── */
+  --success: #2d6a4f;
+  --warning: #f4a261;
+  --danger: #e76f51;
+
+  /* ── Light Theme ─────────────────────────────────────────────────────────── */
+  --bg: #fefbf8;           /* Page background */
+  --surface: #ffffff;      /* Cards, modals, inputs */
+  --surface-alt: #f5e6d3;  /* Subtle sections, chips, tags */
+  --text: #2c1810;         /* Primary body text */
+  --text-muted: #7a6a5f;   /* Secondary / placeholder text */
+  --border: #e8d4a0;       /* Default borders & dividers */
+
+  /* ── Typography ──────────────────────────────────────────────────────────── */
+  --font-serif: 'Cormorant Garamond', Georgia, serif;
+  --font-sans: 'Inter', system-ui, sans-serif;
+
+  /* ── Spacing scale (optional — use Tailwind defaults unless overriding) ──── */
+
+  /* ── Motion ──────────────────────────────────────────────────────────────── */
+  --transition-fast: 150ms ease;
+  --transition-base: 200ms ease;
+  --transition-slow: 300ms ease;
+  --transition-theme: 200ms ease; /* Used for color-scheme transitions */
+}
+
+/* ── Dark Theme ────────────────────────────────────────────────────────────── */
+[data-theme='dark'] {
+  --bg: #1a0f0a;           /* Deep warm black */
+  --surface: #241611;      /* Card / panel background */
+  --surface-alt: #2c1810;  /* Subtle accent surfaces */
+  --text: #f5e6d3;         /* Light warm cream */
+  --text-muted: #a8998c;   /* Subdued secondary text */
+  --border: #4a2f25;       /* Warm dark borders */
+
+  /* Semantic — same hue family but slightly lighter in dark */
+  --success: #40916c;
+  --warning: #f4a261;
+  --danger: #e76f51;
+}
+
+/* ── Smooth theme transition ─────────────────────────────────────────────────
+   Applied to elements that should animate when the theme toggles.
+   Not applied globally (which would cause jank on hover) — only on elements
+   that explicitly need it. Components use `transition-colors duration-200`.
+   ─────────────────────────────────────────────────────────────────────────── */
+html {
+  /* Prevent FOUC during theme toggle */
+  color-scheme: light dark;
+}
+
+/* ── Accessible Focus Visible Ring (WCAG 2.1 AA) ─────────────────────────── */
+*:focus-visible {
+  outline: 2px solid var(--brand-gold);
+  outline-offset: 2px;
+}
+
+/* ── Reduced Motion Enforcement ──────────────────────────────────────────────
+   When prefers-reduced-motion is active, eliminate all CSS transforms, sweeps,
+   and transitions across both themes.
+   ─────────────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+

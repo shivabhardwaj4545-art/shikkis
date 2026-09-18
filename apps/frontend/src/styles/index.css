@@ -1,0 +1,161 @@
+/* ── Fonts ─────────────────────────────────────────────────────────────────── */
+/* Cormorant Garamond — editorial serif for headings and wordmark */
+@import '@fontsource/cormorant-garamond/400.css';
+@import '@fontsource/cormorant-garamond/500.css';
+@import '@fontsource/cormorant-garamond/600.css';
+@import '@fontsource/cormorant-garamond/700.css';
+@import '@fontsource/cormorant-garamond/400-italic.css';
+@import '@fontsource/cormorant-garamond/600-italic.css';
+
+/* Inter — clean sans-serif for body, UI, prices */
+@import '@fontsource/inter/300.css';
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
+
+/* ── Design Tokens ─────────────────────────────────────────────────────────── */
+@import './tokens.css';
+
+/* ── Tailwind ──────────────────────────────────────────────────────────────── */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Base resets & global styles ──────────────────────────────────────────── */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Selection colour — brand gold */
+  ::selection {
+    background-color: var(--brand-gold);
+    color: var(--text);
+  }
+
+  /* Focus ring — use brand gold */
+  :focus-visible {
+    outline: 2px solid var(--brand-gold);
+    outline-offset: 2px;
+  }
+
+  /* Scrollbar — subtle dark chrome */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--surface-alt);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+  }
+
+  /* Heading font */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-serif);
+    line-height: 1.2;
+    font-weight: 600;
+  }
+
+  /* Price display — always Inter so ₹ renders consistently */
+  .price {
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* ── Utility layer additions ───────────────────────────────────────────────── */
+@layer utilities {
+  /* Shimmer gradient for skeleton loading */
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--surface-alt) 25%,
+      var(--border) 50%,
+      var(--surface-alt) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.8s linear infinite;
+  }
+
+  /* Text gradient — brand crimson to gold */
+  .text-gradient {
+    background: linear-gradient(135deg, var(--brand-crimson), var(--brand-gold));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Glassmorphism card */
+  .glass {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+  }
+
+  [data-theme='dark'] .glass {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  /* Gold shimmer sweep animation for promotional banners */
+  @keyframes goldShimmer {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(200%);
+    }
+  }
+
+  .gold-shimmer-sweep {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .gold-shimmer-sweep::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(212, 175, 55, 0.35) 50%,
+      transparent 100%
+    );
+    transform: translateX(-100%);
+    animation: goldShimmer 3.5s infinite ease-in-out;
+    pointer-events: none;
+  }
+}

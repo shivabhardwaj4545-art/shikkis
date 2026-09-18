@@ -1,0 +1,36 @@
+{
+  "name": "shikkis",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n BACKEND,FRONTEND -c blue,magenta \"npm run dev --workspace=apps/backend\" \"npm run dev --workspace=apps/frontend\"",
+    "build:all": "npm run build --workspace=packages/types && npm run build --workspace=apps/backend && npm run build --workspace=apps/frontend",
+    "check:types": "npm run check:types --workspace=packages/types && npm run check:types --workspace=apps/backend && npm run check:types --workspace=apps/frontend",
+    "lint": "eslint . --ext .ts,.tsx",
+    "lint:fix": "eslint . --ext .ts,.tsx --fix",
+    "format": "prettier --write \"**/*.{ts,tsx,json,css,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,json,css,md}\"",
+    "test": "npm run test --workspace=apps/backend"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "axe-core": "^4.13.0",
+    "concurrently": "^9.1.2",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-react": "^7.37.3",
+    "eslint-plugin-react-hooks": "^4.6.2",
+    "prettier": "^3.4.2",
+    "puppeteer-core": "^25.11.0",
+    "typescript": "^5.7.3"
+  },
+  "optionalDependencies": {
+    "@esbuild/win32-x64": "^0.28.2"
+  }
+}

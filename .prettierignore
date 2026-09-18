@@ -1,0 +1,9 @@
+node_modules/
+dist/
+build/
+.cache/
+*.log
+data/*.db-shm
+data/*.db-wal
+.env
+.env.local

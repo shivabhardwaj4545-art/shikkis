@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en-IN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Shikkis — Curated Indian & Fusion Wear for men and women. Shop authentic handcrafted clothing online." />
+    <title>Shikkis — Curated Style | Indian &amp; Fusion Wear</title>
+
+    <!-- Razorpay Checkout JS SDK -->
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+
+    <!-- Google Identity Services (GSI) SDK for 1-Tap Google Login -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+    <!--
+      BLOCKING THEME SCRIPT
+      Must run synchronously BEFORE any paint to prevent flash of wrong theme.
+      Reads localStorage key 'shikkis-theme' (values: 'light' | 'dark' | 'system').
+      Falls back to OS preference, then light.
+      Sets data-theme on <html> so CSS custom properties load with the correct values.
+    -->
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem('shikkis-theme') || 'system';
+          var resolved = saved;
+          if (saved === 'system') {
+            resolved = window.matchMedia('(prefers-color-scheme: dark)').matches
+              ? 'dark'
+              : 'light';
+          }
+          document.documentElement.setAttribute('data-theme', resolved);
+        } catch (_) {
+          // localStorage may be blocked in some privacy modes — default to light
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

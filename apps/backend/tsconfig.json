@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "moduleResolution": "node16",
+    "module": "node16",
+    "target": "ES2022",
+    "noEmit": true,
+    "paths": {
+      "@shikkis/types": ["../../packages/types/src/index.ts"]
+    }
+  },
+  "include": ["src", "../../packages/types/src"],
+  "exclude": ["node_modules", "dist"]
+}

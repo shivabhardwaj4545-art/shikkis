@@ -1,0 +1,28 @@
+:root {
+  /* Brand (Identical in both themes) */
+  --brand-crimson: #9B1B30;
+  --brand-gold: #D4AF37;
+
+  /* Semantic */
+  --success: #2D6A4F;
+  --warning: #F4A261;
+  --danger: #E76F51;
+
+  /* Default Light Theme */
+  --bg: #FEFBF8;
+  --surface: #FFFFFF;
+  --surface-alt: #F5E6D3;
+  --text: #2C1810;
+  --text-muted: #7A6A5F;
+  --border: #E8D4A0;
+}
+
+[data-theme="dark"] {
+  /* Dark Theme */
+  --bg: #1A0F0A;
+  --surface: #241611;
+  --surface-alt: #2C1810;
+  --text: #F5E6D3;
+  --text-muted: #A8998C;
+  --border: #4A2F25;
+}
