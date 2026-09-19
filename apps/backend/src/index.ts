@@ -39,31 +39,7 @@ initSchema();
 // ── Security ──────────────────────────────────────────────────────────────────
 app.use(
   helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: [
-          "'self'",
-          "'unsafe-inline'",
-          "'unsafe-eval'",
-          'https://checkout.razorpay.com',
-          'https://accounts.google.com',
-        ],
-        scriptSrcElem: [
-          "'self'",
-          "'unsafe-inline'",
-          'https://checkout.razorpay.com',
-          'https://accounts.google.com',
-        ],
-        styleSrc: ["'self'", "'unsafe-inline'", 'https:'],
-        imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
-        connectSrc: ["'self'", 'https:', 'wss:'],
-        frameSrc: ["'self'", 'https://api.razorpay.com', 'https://checkout.razorpay.com', 'https://accounts.google.com'],
-        fontSrc: ["'self'", 'data:', 'https:'],
-        objectSrc: ["'none'"],
-        upgradeInsecureRequests: null,
-      },
-    },
+    contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false,
   }),
 );
