@@ -118,6 +118,18 @@ app.use('/api/webhooks', webhooksRouter);
 
 export { authLimiter, couponLimiter };
 
+// ── Serve Frontend SPA in Production ──────────────────────────────────────────
+const frontendDistDir = path.resolve(__dirname, '../../frontend/dist');
+if (NODE_ENV === 'production') {
+  app.use(express.static(frontendDistDir));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/') || req.path.startsWith('/uploads/')) {
+      return next();
+    }
+    res.sendFile(path.join(frontendDistDir, 'index.html'));
+  });
+}
+
 // ── Error handler — must be LAST ──────────────────────────────────────────────
 app.use(errorHandler);
 
