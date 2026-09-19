@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import db from '../db/client.js';
+import { seedFullDatabase } from '../db/seedFull.js';
 
 export const productsRouter = Router();
 
@@ -172,6 +173,15 @@ productsRouter.get('/search', (req, res) => {
  * Full catalog query with cursor pagination, filters & sorting
  */
 productsRouter.get('/', (req, res) => {
+  const productCount = (db.prepare('SELECT COUNT(*) as cnt FROM products').get() as any)?.cnt || 0;
+  if (productCount === 0) {
+    try {
+      console.log('🌱 Products endpoint detected 0 products. Auto-seeding catalog...');
+      seedFullDatabase(db);
+    } catch (e) {
+      console.error('Auto-seed error in products router:', e);
+    }
+  }
   const {
     category,
     gender,
