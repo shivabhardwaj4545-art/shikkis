@@ -11,7 +11,13 @@ const __dirname = path.dirname(__filename);
  * Safe to call repeatedly due to CREATE TABLE IF NOT EXISTS / CREATE INDEX IF NOT EXISTS.
  */
 export function initSchema(): void {
-  const schemaPath = path.resolve(__dirname, 'schema.sql');
+  let schemaPath = path.resolve(__dirname, 'schema.sql');
+  if (!fs.existsSync(schemaPath)) {
+    schemaPath = path.resolve(__dirname, '../../../src/db/schema.sql');
+  }
+  if (!fs.existsSync(schemaPath)) {
+    schemaPath = path.resolve(__dirname, '../../src/db/schema.sql');
+  }
   const schemaSql = fs.readFileSync(schemaPath, 'utf8');
   db.exec(schemaSql);
 }

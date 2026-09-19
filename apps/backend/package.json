@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js",
+    "build": "tsc && node -e \"import('fs').then(f=>f.mkdirSync('dist/apps/backend/src/db',{recursive:true})).then(()=>import('fs')).then(f=>f.copyFileSync('src/db/schema.sql','dist/apps/backend/src/db/schema.sql'))\"",
+    "start": "node dist/apps/backend/src/index.js",
     "check:types": "tsc --noEmit",
     "db:seed": "tsx src/db/seed.ts",
     "test": "vitest run"
