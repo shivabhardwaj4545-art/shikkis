@@ -8,14 +8,15 @@ import type { Database as DatabaseType } from 'better-sqlite3';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Resolve to the shared data/ folder at the monorepo root (apps/backend/src/db → root/data)
-const dbDir = path.resolve(__dirname, '../../../../data');
+// Resolve SQLite database path reliably across dev and production
+const dbPath =
+  process.env.DATABASE_PATH ||
+  path.resolve(process.cwd(), 'data/shikkis.db');
 
+const dbDir = path.dirname(dbPath);
 if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
 }
-
-const dbPath = path.resolve(dbDir, 'shikkis.db');
 
 export const db: DatabaseType = new Database(dbPath);
 
