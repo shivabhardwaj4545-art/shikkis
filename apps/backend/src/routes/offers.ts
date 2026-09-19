@@ -8,6 +8,7 @@ export const offersRouter = Router();
  * Returns currently active promotional offers
  */
 offersRouter.get('/active', (_req, res) => {
+  const now = new Date().toISOString();
   const rows = db
     .prepare(`
       SELECT
@@ -15,11 +16,11 @@ offersRouter.get('/active', (_req, res) => {
         starts_at, ends_at, banner_image_url, priority
       FROM offers
       WHERE is_active = 1
-        AND (starts_at IS NULL OR starts_at <= datetime('now'))
-        AND (ends_at IS NULL OR ends_at >= datetime('now'))
+        AND (starts_at IS NULL OR starts_at <= ?)
+        AND (ends_at IS NULL OR ends_at >= ?)
       ORDER BY priority DESC
     `)
-    .all();
+    .all(now, now);
 
   return res.json({ data: rows });
 });

@@ -37,7 +37,7 @@ export const HomePage: React.FC = () => {
 
     async function loadHomeData() {
       try {
-        const [bannersRes, categoriesRes, productsRes, offersRes] = await Promise.all([
+        const [bannersRes, categoriesRes, productsRes, offersRes] = await Promise.allSettled([
           api.getActiveBanners(),
           api.getCategories(),
           api.getProducts({ is_featured: true, limit: 8 }),
@@ -45,10 +45,36 @@ export const HomePage: React.FC = () => {
         ]);
 
         if (mounted) {
-          setBanners(bannersRes.data || []);
-          setCategories(categoriesRes.data || []);
-          setFeaturedProducts(productsRes.data || []);
-          setActiveOffers(offersRes.data || []);
+          const loadedBanners = bannersRes.status === 'fulfilled' ? bannersRes.value.data || [] : [];
+          const loadedCategories = categoriesRes.status === 'fulfilled' ? categoriesRes.value.data || [] : [];
+          const loadedProducts = productsRes.status === 'fulfilled' ? productsRes.value.data || [] : [];
+          const loadedOffers = offersRes.status === 'fulfilled' ? offersRes.value.data || [] : [];
+
+          const fallbackBanners: BannerItem[] = [
+            {
+              id: 'fallback_01',
+              title: 'The Royal Weaves of Varanasi',
+              subtitle: 'Handcrafted Silk Sarees & Heritage Zari Craftsmanship',
+              image_url: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?q=80&w=1600&auto=format&fit=crop',
+              cta_text: 'Explore Sarees',
+              cta_link: '/catalog?category=sarees',
+              display_order: 1,
+            },
+            {
+              id: 'fallback_02',
+              title: 'Bespoke Festive Elegance',
+              subtitle: 'Scarlet Bridal Lehengas & Hand-Embroidered Anarkalis',
+              image_url: 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?q=80&w=1600&auto=format&fit=crop',
+              cta_text: 'Shop Festive Edit',
+              cta_link: '/catalog?occasion=Festive',
+              display_order: 2,
+            },
+          ];
+
+          setBanners(loadedBanners.length > 0 ? loadedBanners : fallbackBanners);
+          setCategories(loadedCategories);
+          setFeaturedProducts(loadedProducts);
+          setActiveOffers(loadedOffers);
         }
       } catch (err) {
         console.error('Failed to load home page data:', err);
