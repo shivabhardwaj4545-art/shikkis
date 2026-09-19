@@ -44,10 +44,12 @@ app.use(
   }),
 );
 
-// Remove any lingering CSP headers to allow Razorpay, Google GSI, and inline scripts
+// Explicitly send a permissive Content-Security-Policy header so browsers allow Razorpay SDK, Google GSI, inline scripts & all images
 app.use((_req, res, next) => {
-  res.removeHeader('Content-Security-Policy');
-  res.removeHeader('X-Content-Security-Policy');
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval' data: blob: https://checkout.razorpay.com https://accounts.google.com; script-src-elem * 'unsafe-inline' 'unsafe-eval' data: blob: https://checkout.razorpay.com https://accounts.google.com; style-src * 'unsafe-inline' https:; img-src * data: blob: https: http:; connect-src *; frame-src *;"
+  );
   next();
 });
 
@@ -125,14 +127,30 @@ app.use('/api/webhooks', webhooksRouter);
 export { authLimiter, couponLimiter };
 
 // ── Serve Frontend SPA in Production ──────────────────────────────────────────
-const frontendDistDir = path.resolve(__dirname, '../../frontend/dist');
+let frontendDistDir = path.resolve(__dirname, '../../frontend/dist');
+if (!fs.existsSync(frontendDistDir)) {
+  frontendDistDir = path.resolve(__dirname, '../frontend/dist');
+}
+if (!fs.existsSync(frontendDistDir)) {
+  frontendDistDir = path.resolve(process.cwd(), 'apps/frontend/dist');
+}
+if (!fs.existsSync(frontendDistDir)) {
+  frontendDistDir = path.resolve(process.cwd(), 'dist');
+}
+
 if (NODE_ENV === 'production') {
+  console.info(`📦 Serving frontend SPA from: ${frontendDistDir}`);
   app.use(express.static(frontendDistDir));
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api/') || req.path.startsWith('/uploads/')) {
       return next();
     }
-    res.sendFile(path.join(frontendDistDir, 'index.html'));
+    const indexHtmlPath = path.join(frontendDistDir, 'index.html');
+    if (fs.existsSync(indexHtmlPath)) {
+      res.sendFile(indexHtmlPath);
+    } else {
+      next();
+    }
   });
 }
 
