@@ -336,6 +336,12 @@ function parseSqliteParams(sql: string, params: any[]): { text: string; values: 
   text = text.replace(/\bILIKE\b/gi, 'LIKE');
   text = text.replace(/\bTIMESTAMPTZ\b/gi, 'TEXT');
   text = text.replace(/\bBIGINT\b/gi, 'INTEGER');
+
+  text = text.replace(/TO_CHAR\(([^,]+),\s*'YYYY-MM-DD'\)/gi, "strftime('%Y-%m-%d', $1)");
+  text = text.replace(/CURRENT_TIMESTAMP\s*\+\s*INTERVAL\s*'(\d+)\s*days?'/gi, "datetime('now', '+$1 days')");
+  text = text.replace(/CURRENT_TIMESTAMP\s*-\s*INTERVAL\s*'(\d+)\s*days?'/gi, "datetime('now', '-$1 days')");
+  text = text.replace(/CURRENT_DATE\s*-\s*INTERVAL\s*'(\d+)\s*days?'/gi, "date('now', '-$1 days')");
+  text = text.replace(/CURRENT_DATE/gi, "date('now')");
   text = text.replace(/CURRENT_TIMESTAMP/gi, "datetime('now')");
 
   return { text, values };

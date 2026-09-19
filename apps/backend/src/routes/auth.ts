@@ -62,11 +62,13 @@ authRouter.post('/login', validate(loginSchema, 'body'), async (req, res, next) 
     const accessToken = generateAccessToken(tokenPayload);
     const refreshToken = generateRefreshToken({ sub: user.id, role: user.role });
 
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
     // Store refresh token
     await db.prepare(
       `INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at)
-       VALUES (?, ?, ?, CURRENT_TIMESTAMP + INTERVAL '7 days')`
-    ).run(`rt_${Date.now()}`, user.id, refreshToken);
+       VALUES (?, ?, ?, ?)`
+    ).run(`rt_${Date.now()}`, user.id, refreshToken, expiresAt);
 
     // Set cookie
     res.cookie('accessToken', accessToken, {
@@ -231,10 +233,12 @@ authRouter.post('/google', validate(googleAuthSchema, 'body'), async (req, res, 
     const accessToken = generateAccessToken(tokenPayload);
     const refreshToken = generateRefreshToken({ sub: user.id, role: user.role });
 
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
     await db.prepare(
       `INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at)
-       VALUES (?, ?, ?, CURRENT_TIMESTAMP + INTERVAL '7 days')`
-    ).run(`rt_${Date.now()}`, user.id, refreshToken);
+       VALUES (?, ?, ?, ?)`
+    ).run(`rt_${Date.now()}`, user.id, refreshToken, expiresAt);
 
     res.cookie('accessToken', accessToken, {
       httpOnly: true,
