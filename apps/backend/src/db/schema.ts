@@ -2,17 +2,16 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import db from './client.js';
+import { seedFullDatabase } from './seedFull.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * Initializes the SQLite database schema by reading and executing schema.sql.
+ * Initializes the PostgreSQL database schema by reading and executing schema.sql.
  * Safe to call repeatedly due to CREATE TABLE IF NOT EXISTS / CREATE INDEX IF NOT EXISTS.
  */
-import { seedFullDatabase } from './seedFull.js';
-
-export function initSchema(): void {
+export async function initSchema(): Promise<void> {
   const possiblePaths = [
     path.resolve(__dirname, 'schema.sql'),
     path.resolve(__dirname, 'db/schema.sql'),
@@ -33,22 +32,26 @@ export function initSchema(): void {
   }
 
   if (schemaSql) {
-    db.exec(schemaSql);
+    await db.exec(schemaSql);
   } else {
     console.warn('⚠️ schema.sql file not found in build paths!');
   }
 
-  seedIfEmpty();
+  await seedIfEmpty();
 }
 
-function seedIfEmpty(): void {
+async function seedIfEmpty(): Promise<void> {
   try {
-    const userCount = (db.prepare('SELECT COUNT(*) as cnt FROM users').get() as any)?.cnt || 0;
-    const productCount = (db.prepare('SELECT COUNT(*) as cnt FROM products').get() as any)?.cnt || 0;
+    const userRes = await db.queryOne<{ cnt: string | number }>('SELECT COUNT(*) as cnt FROM users');
+    const productRes = await db.queryOne<{ cnt: string | number }>('SELECT COUNT(*) as cnt FROM products');
+
+    const userCount = Number(userRes?.cnt ?? 0);
+    const productCount = Number(productRes?.cnt ?? 0);
+
     if (userCount > 0 && productCount > 0) return;
 
     console.log('🌱 Empty catalog or users detected. Seeding full catalog, banners, offers, orders & admin account...');
-    seedFullDatabase(db);
+    await seedFullDatabase(db);
     console.log('✅ Full Database Seeding Complete!');
   } catch (err) {
     console.error('Error auto-seeding database:', err);

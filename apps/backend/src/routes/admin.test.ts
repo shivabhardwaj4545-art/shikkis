@@ -130,7 +130,7 @@ describe('Admin Security & Management API (/api/admin/*)', () => {
     it('performs batch stock update and writes to audit_log', async () => {
       const db = getDb();
       // Get 2 variant IDs
-      const variants = db.prepare('SELECT id FROM product_variants LIMIT 2').all() as any[];
+      const variants = (await db.prepare('SELECT id FROM product_variants LIMIT 2').all()) as any[];
       const vIds = variants.map((v) => v.id);
 
       const batchRes = await request(app)
@@ -143,9 +143,10 @@ describe('Admin Security & Management API (/api/admin/*)', () => {
       expect(batchRes.body.updated_count).toBe(2);
 
       // Verify audit_log entry was created
-      const audit = db
+      const audit = (await db
         .prepare("SELECT * FROM audit_log WHERE action = 'BATCH_STOCK_UPDATE' ORDER BY created_at DESC LIMIT 1")
-        .get() as any;
+        .get()) as any;
+
       expect(audit).toBeDefined();
       expect(audit.user_id).toBe('usr_owner_01');
       expect(audit.entity_type).toBe('product_variant');

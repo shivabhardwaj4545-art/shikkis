@@ -26,11 +26,11 @@ authRouter.post('/login', validate(loginSchema, 'body'), async (req, res, next) 
     const { email, password } = req.body;
     const db = getDb();
 
-    const user = db
+    const user = (await db
       .prepare(
         'SELECT id, email, password_hash, first_name, last_name, phone, role, is_active FROM users WHERE email = ?'
       )
-      .get(email.toLowerCase()) as any;
+      .get(email.toLowerCase())) as any;
 
     if (!user || !user.is_active) {
       res.status(401).json({
@@ -63,9 +63,9 @@ authRouter.post('/login', validate(loginSchema, 'body'), async (req, res, next) 
     const refreshToken = generateRefreshToken({ sub: user.id, role: user.role });
 
     // Store refresh token
-    db.prepare(
+    await db.prepare(
       `INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at)
-       VALUES (?, ?, ?, datetime('now', '+7 days'))`
+       VALUES (?, ?, ?, CURRENT_TIMESTAMP + INTERVAL '7 days')`
     ).run(`rt_${Date.now()}`, user.id, refreshToken);
 
     // Set cookie
@@ -110,7 +110,7 @@ authRouter.post('/register', validate(registerSchema, 'body'), async (req, res, 
     const { email, password, first_name, last_name, phone } = req.body;
     const db = getDb();
 
-    const existing = db
+    const existing = await db
       .prepare('SELECT id FROM users WHERE email = ?')
       .get(email.toLowerCase());
 
@@ -127,7 +127,7 @@ authRouter.post('/register', validate(registerSchema, 'body'), async (req, res, 
     const password_hash = await bcrypt.hash(password, 10);
     const userId = `usr_cust_${Date.now()}`;
 
-    db.prepare(
+    await db.prepare(
       `INSERT INTO users (id, email, password_hash, first_name, last_name, phone, role, is_active)
        VALUES (?, ?, ?, ?, ?, ?, 'customer', 1)`
     ).run(userId, email.toLowerCase(), password_hash, first_name, last_name || null, phone || null);
@@ -200,13 +200,13 @@ authRouter.post('/google', validate(googleAuthSchema, 'body'), async (req, res, 
     }
 
     const db = getDb();
-    let user = db
+    let user = (await db
       .prepare('SELECT id, email, first_name, last_name, phone, role, is_active FROM users WHERE email = ?')
-      .get(email) as any;
+      .get(email)) as any;
 
     if (!user) {
       const userId = `usr_google_${Date.now()}`;
-      db.prepare(
+      await db.prepare(
         `INSERT INTO users (id, email, password_hash, first_name, last_name, phone, role, is_active)
          VALUES (?, ?, 'google_oauth_account', ?, ?, null, 'customer', 1)`
       ).run(userId, email, firstName, lastName);
@@ -231,9 +231,9 @@ authRouter.post('/google', validate(googleAuthSchema, 'body'), async (req, res, 
     const accessToken = generateAccessToken(tokenPayload);
     const refreshToken = generateRefreshToken({ sub: user.id, role: user.role });
 
-    db.prepare(
+    await db.prepare(
       `INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at)
-       VALUES (?, ?, ?, datetime('now', '+7 days'))`
+       VALUES (?, ?, ?, CURRENT_TIMESTAMP + INTERVAL '7 days')`
     ).run(`rt_${Date.now()}`, user.id, refreshToken);
 
     res.cookie('accessToken', accessToken, {
@@ -264,14 +264,14 @@ authRouter.post('/google', validate(googleAuthSchema, 'body'), async (req, res, 
  * GET /api/auth/me
  * Returns authenticated user details from verified JWT
  */
-authRouter.get('/me', verifyJWT, (req, res, next) => {
+authRouter.get('/me', verifyJWT, async (req, res, next) => {
   try {
     const db = getDb();
-    const user = db
+    const user = (await db
       .prepare(
         'SELECT id, email, first_name, last_name, phone, role, is_active, created_at FROM users WHERE id = ?'
       )
-      .get(req.user!.sub) as any;
+      .get(req.user!.sub)) as any;
 
     if (!user) {
       res.status(404).json({
@@ -302,10 +302,10 @@ authRouter.post('/logout', (_req, res) => {
  * GET /api/auth/demo-users
  * Returns seeded test customers for quick switching during manual testing/QA
  */
-authRouter.get('/demo-users', (_req, res, next) => {
+authRouter.get('/demo-users', async (_req, res, next) => {
   try {
     const db = getDb();
-    const users = db
+    const users = await db
       .prepare(
         "SELECT id, email, first_name, last_name, role FROM users WHERE role = 'customer' ORDER BY id ASC"
       )

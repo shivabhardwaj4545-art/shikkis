@@ -1,4 +1,3 @@
-import Database from 'better-sqlite3';
 import defaultDb from '../db/client.js';
 
 export interface CartItemInput {
@@ -86,12 +85,12 @@ interface OfferDbRow {
  * The authoritative, single source of truth for all discount and pricing calculations.
  * Used identically by cart preview and order placement.
  */
-export function calculateCart(
+export async function calculateCart(
   itemsInput: CartItemInput[],
   userId?: string,
   couponCode?: string,
-  dbOverride?: Database.Database
-): CartBreakdown {
+  dbOverride?: any
+): Promise<CartBreakdown> {
   const db = dbOverride || defaultDb;
 
   // 1. Handle empty cart
@@ -126,16 +125,16 @@ export function calculateCart(
   for (const item of itemsInput) {
     if (item.quantity <= 0) continue;
 
-    const row = getVariantStmt.get(item.variant_id) as any;
+    const row = (await getVariantStmt.get(item.variant_id)) as any;
     if (!row) continue;
 
-    const unitMrp = row.price_override ?? row.mrp;
-    const baseDiscount = Math.round((unitMrp * row.discount_percent) / 100);
+    const unitMrp = Number(row.price_override ?? row.mrp);
+    const baseDiscount = Math.round((unitMrp * Number(row.discount_percent)) / 100);
     const unitBasePrice = unitMrp - baseDiscount;
 
     let images: string[] = [];
     try {
-      images = JSON.parse(row.images);
+      images = typeof row.images === 'string' ? JSON.parse(row.images) : row.images || [];
     } catch {
       images = [];
     }
@@ -156,9 +155,9 @@ export function calculateCart(
       color: row.color,
       image_url: images[0] || '/placeholder.jpg',
       quantity: item.quantity,
-      stock: row.stock,
+      stock: Number(row.stock),
       unit_mrp_paise: unitMrp,
-      unit_product_discount_percent: row.discount_percent,
+      unit_product_discount_percent: Number(row.discount_percent),
       unit_base_price_paise: unitBasePrice,
       unit_auto_discount_paise: 0,
       unit_final_price_paise: unitBasePrice,
@@ -168,15 +167,15 @@ export function calculateCart(
   }
 
   // 3. Load active offers where is_active = 1 and now between starts_at and ends_at
-  const activeOffers = db
+  const activeOffers = (await db
     .prepare(`
       SELECT *
       FROM offers
       WHERE is_active = 1
-        AND datetime('now') BETWEEN starts_at AND ends_at
+        AND CURRENT_TIMESTAMP BETWEEN starts_at AND ends_at
       ORDER BY priority DESC
     `)
-    .all() as OfferDbRow[];
+    .all()) as OfferDbRow[];
 
   const appliedOffers: Array<{ id: string; name: string; type: string; discount_paise: number }> = [];
   const discounts: NamedDiscount[] = [];
@@ -186,22 +185,26 @@ export function calculateCart(
   const autoOffers = activeOffers.filter((o) => o.code === null || o.code === '');
 
   for (const offer of autoOffers) {
+    const minCartValue = Number(offer.min_cart_value);
+    const offerValue = Number(offer.value);
+    const maxDiscount = offer.max_discount !== null ? Number(offer.max_discount) : null;
+
     // Check minimum cart value
-    if (offer.min_cart_value > 0 && subtotalBase < offer.min_cart_value) {
+    if (minCartValue > 0 && subtotalBase < minCartValue) {
       continue;
     }
 
     // Check usage limit
-    if (offer.usage_limit && offer.used_count >= offer.usage_limit) {
+    if (offer.usage_limit && Number(offer.used_count) >= Number(offer.usage_limit)) {
       continue;
     }
 
     // Check per_user_limit
-    if (userId && offer.per_user_limit > 0) {
-      const redemptions = db
+    if (userId && Number(offer.per_user_limit) > 0) {
+      const redemptions = (await db
         .prepare('SELECT COUNT(*) as count FROM offer_redemptions WHERE offer_id = ? AND user_id = ?')
-        .get(offer.id, userId) as { count: number };
-      if (redemptions && redemptions.count >= offer.per_user_limit) {
+        .get(offer.id, userId)) as { count: string | number };
+      if (redemptions && Number(redemptions.count) >= Number(offer.per_user_limit)) {
         continue;
       }
     }
@@ -212,14 +215,14 @@ export function calculateCart(
       matchingItems = lineItems;
     } else if (offer.scope === 'category') {
       try {
-        const catIds: string[] = JSON.parse(offer.scope_ids || '[]');
+        const catIds: string[] = typeof offer.scope_ids === 'string' ? JSON.parse(offer.scope_ids || '[]') : offer.scope_ids || [];
         matchingItems = lineItems.filter((it) => catIds.includes(it.category_id));
       } catch {
         matchingItems = [];
       }
     } else if (offer.scope === 'product') {
       try {
-        const prdIds: string[] = JSON.parse(offer.scope_ids || '[]');
+        const prdIds: string[] = typeof offer.scope_ids === 'string' ? JSON.parse(offer.scope_ids || '[]') : offer.scope_ids || [];
         matchingItems = lineItems.filter((it) => prdIds.includes(it.product_id));
       } catch {
         matchingItems = [];
@@ -232,17 +235,17 @@ export function calculateCart(
 
     if (offer.type === 'percent') {
       for (const it of matchingItems) {
-        const lineDiscount = Math.round((it.line_subtotal_paise * offer.value) / 100);
+        const lineDiscount = Math.round((it.line_subtotal_paise * offerValue) / 100);
         offerTotalDiscount += lineDiscount;
       }
-      if (offer.max_discount && offerTotalDiscount > offer.max_discount) {
-        offerTotalDiscount = offer.max_discount;
+      if (maxDiscount !== null && offerTotalDiscount > maxDiscount) {
+        offerTotalDiscount = maxDiscount;
       }
     } else if (offer.type === 'flat') {
       const matchingSubtotal = matchingItems.reduce((acc, it) => acc + it.line_subtotal_paise, 0);
-      offerTotalDiscount = Math.min(offer.value, matchingSubtotal);
-      if (offer.max_discount && offerTotalDiscount > offer.max_discount) {
-        offerTotalDiscount = offer.max_discount;
+      offerTotalDiscount = Math.min(offerValue, matchingSubtotal);
+      if (maxDiscount !== null && offerTotalDiscount > maxDiscount) {
+        offerTotalDiscount = maxDiscount;
       }
     }
 
@@ -307,9 +310,9 @@ export function calculateCart(
     const cleanCode = couponCode.trim().toUpperCase();
 
     // Query for coupon
-    const couponOffer = db
+    const couponOffer = (await db
       .prepare('SELECT * FROM offers WHERE UPPER(code) = ?')
-      .get(cleanCode) as OfferDbRow | undefined;
+      .get(cleanCode)) as OfferDbRow | undefined;
 
     const nowIso = new Date().toISOString();
 
@@ -322,16 +325,16 @@ export function calculateCart(
     } else if (nonStackableAutoApplied) {
       // Reject when a non-stackable auto-offer already applied
       couponError = 'Cannot combine coupon with current automatic promotional offers.';
-    } else if (couponOffer.min_cart_value > 0 && currentSubtotal < couponOffer.min_cart_value) {
-      const reqRupees = Math.round(couponOffer.min_cart_value / 100);
+    } else if (Number(couponOffer.min_cart_value) > 0 && currentSubtotal < Number(couponOffer.min_cart_value)) {
+      const reqRupees = Math.round(Number(couponOffer.min_cart_value) / 100);
       couponError = `Minimum cart value of ₹${reqRupees} required for this coupon.`;
-    } else if (couponOffer.usage_limit && couponOffer.used_count >= couponOffer.usage_limit) {
+    } else if (couponOffer.usage_limit && Number(couponOffer.used_count) >= Number(couponOffer.usage_limit)) {
       couponError = 'Coupon usage limit has been reached.';
-    } else if (userId && couponOffer.per_user_limit > 0) {
-      const redemptions = db
+    } else if (userId && Number(couponOffer.per_user_limit) > 0) {
+      const redemptions = (await db
         .prepare('SELECT COUNT(*) as count FROM offer_redemptions WHERE offer_id = ? AND user_id = ?')
-        .get(couponOffer.id, userId) as { count: number };
-      if (redemptions && redemptions.count >= couponOffer.per_user_limit) {
+        .get(couponOffer.id, userId)) as { count: string | number };
+      if (redemptions && Number(redemptions.count) >= Number(couponOffer.per_user_limit)) {
         couponError = 'You have already used this coupon the maximum allowed number of times.';
       }
     }
@@ -339,16 +342,18 @@ export function calculateCart(
     // If no error, calculate coupon discount
     if (!couponError && couponOffer) {
       let couponDiscount = 0;
+      const offerVal = Number(couponOffer.value);
+      const maxDisc = couponOffer.max_discount !== null ? Number(couponOffer.max_discount) : null;
 
       if (couponOffer.type === 'percent') {
-        couponDiscount = Math.round((currentSubtotal * couponOffer.value) / 100);
-        if (couponOffer.max_discount && couponDiscount > couponOffer.max_discount) {
-          couponDiscount = couponOffer.max_discount;
+        couponDiscount = Math.round((currentSubtotal * offerVal) / 100);
+        if (maxDisc !== null && couponDiscount > maxDisc) {
+          couponDiscount = maxDisc;
         }
       } else if (couponOffer.type === 'flat') {
-        couponDiscount = Math.min(couponOffer.value, currentSubtotal);
-        if (couponOffer.max_discount && couponDiscount > couponOffer.max_discount) {
-          couponDiscount = couponOffer.max_discount;
+        couponDiscount = Math.min(offerVal, currentSubtotal);
+        if (maxDisc !== null && couponDiscount > maxDisc) {
+          couponDiscount = maxDisc;
         }
       } else if (couponOffer.type === 'free_shipping') {
         freeShippingApplied = true;
@@ -383,7 +388,6 @@ export function calculateCart(
   }
 
   // 6. Calculate Shipping
-  // Flat ₹150 (15000 paise), free if subtotal >= ₹2,500 (250000 paise) or free_shipping coupon
   let shippingPaise = 15000;
   if (freeShippingApplied || currentSubtotal >= 250000 || currentSubtotal === 0) {
     shippingPaise = 0;

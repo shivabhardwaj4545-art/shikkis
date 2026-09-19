@@ -19,18 +19,19 @@ interface OfferRow {
 /**
  * Fetch all active auto-applied offers (code IS NULL)
  */
-function getActiveAutoOffers(): OfferRow[] {
-  return db
+async function getActiveAutoOffers(): Promise<OfferRow[]> {
+  const rows = await db
     .prepare(`
       SELECT id, name, code, type, value, max_discount, min_cart_value, scope, scope_ids
       FROM offers
       WHERE is_active = 1
         AND code IS NULL
-        AND (starts_at IS NULL OR starts_at <= datetime('now'))
-        AND (ends_at IS NULL OR ends_at >= datetime('now'))
+        AND (starts_at IS NULL OR starts_at <= CURRENT_TIMESTAMP)
+        AND (ends_at IS NULL OR ends_at >= CURRENT_TIMESTAMP)
       ORDER BY priority DESC
     `)
-    .all() as OfferRow[];
+    .all();
+  return rows as OfferRow[];
 }
 
 /**
@@ -43,7 +44,6 @@ function computePrices(
   categoryId: string,
   activeOffers: OfferRow[]
 ) {
-  // Base discount from product discount_percent
   const baseDiscountPaise = Math.round((mrpPaise * discountPercent) / 100);
   const basePricePaise = mrpPaise - baseDiscountPaise;
 
@@ -56,14 +56,14 @@ function computePrices(
       scopeMatches = true;
     } else if (offer.scope === 'category') {
       try {
-        const catIds = JSON.parse(offer.scope_ids || '[]');
+        const catIds = typeof offer.scope_ids === 'string' ? JSON.parse(offer.scope_ids || '[]') : offer.scope_ids || [];
         if (catIds.includes(categoryId)) scopeMatches = true;
       } catch {
         // ignore JSON parse error
       }
     } else if (offer.scope === 'product') {
       try {
-        const prdIds = JSON.parse(offer.scope_ids || '[]');
+        const prdIds = typeof offer.scope_ids === 'string' ? JSON.parse(offer.scope_ids || '[]') : offer.scope_ids || [];
         if (prdIds.includes(productId)) scopeMatches = true;
       } catch {
         // ignore
@@ -71,18 +71,20 @@ function computePrices(
     }
 
     if (scopeMatches) {
+      const offerVal = Number(offer.value);
+      const maxDisc = offer.max_discount !== null ? Number(offer.max_discount) : null;
       if (offer.type === 'percent') {
-        let disc = Math.round((basePricePaise * offer.value) / 100);
-        if (offer.max_discount && disc > offer.max_discount) {
-          disc = offer.max_discount;
+        let disc = Math.round((basePricePaise * offerVal) / 100);
+        if (maxDisc !== null && disc > maxDisc) {
+          disc = maxDisc;
         }
         offerDiscountPaise = disc;
         appliedOffer = { id: offer.id, name: offer.name, discount_paise: disc };
-        break; // apply highest priority offer
+        break;
       } else if (offer.type === 'flat') {
-        let disc = offer.value;
-        if (offer.max_discount && disc > offer.max_discount) {
-          disc = offer.max_discount;
+        let disc = offerVal;
+        if (maxDisc !== null && disc > maxDisc) {
+          disc = maxDisc;
         }
         offerDiscountPaise = Math.min(disc, basePricePaise);
         appliedOffer = { id: offer.id, name: offer.name, discount_paise: offerDiscountPaise };
@@ -110,16 +112,16 @@ function computePrices(
  * GET /api/products/search?q=
  * Quick debounce-friendly autocomplete search
  */
-productsRouter.get('/search', (req, res) => {
+productsRouter.get('/search', async (req, res) => {
   const query = (req.query.q as string)?.trim();
   if (!query || query.length < 2) {
     return res.json({ products: [] });
   }
 
-  const activeOffers = getActiveAutoOffers();
+  const activeOffers = await getActiveAutoOffers();
   const searchPattern = `%${query}%`;
 
-  const rows = db
+  const rows = (await db
     .prepare(`
       SELECT
         p.id, p.category_id, p.name, p.slug, p.description, p.mrp, p.discount_percent,
@@ -127,18 +129,18 @@ productsRouter.get('/search', (req, res) => {
       FROM products p
       JOIN categories c ON c.id = p.category_id
       WHERE p.is_active = 1
-        AND (p.name LIKE ? OR p.description LIKE ? OR c.name LIKE ?)
+        AND (p.name ILIKE ? OR p.description ILIKE ? OR c.name ILIKE ?)
       ORDER BY p.is_featured DESC, p.created_at DESC
       LIMIT 8
     `)
-    .all(searchPattern, searchPattern, searchPattern) as Array<{
+    .all(searchPattern, searchPattern, searchPattern)) as Array<{
       id: string;
       category_id: string;
       name: string;
       slug: string;
       description: string;
-      mrp: number;
-      discount_percent: number;
+      mrp: number | string;
+      discount_percent: number | string;
       images: string;
       category_name: string;
     }>;
@@ -146,12 +148,14 @@ productsRouter.get('/search', (req, res) => {
   const results = rows.map((p) => {
     let images: string[] = [];
     try {
-      images = JSON.parse(p.images);
+      images = typeof p.images === 'string' ? JSON.parse(p.images) : p.images || [];
     } catch {
       images = [];
     }
 
-    const priceInfo = computePrices(p.mrp, p.discount_percent, p.id, p.category_id, activeOffers);
+    const mrp = Number(p.mrp);
+    const discPct = Number(p.discount_percent);
+    const priceInfo = computePrices(mrp, discPct, p.id, p.category_id, activeOffers);
 
     return {
       id: p.id,
@@ -172,12 +176,14 @@ productsRouter.get('/search', (req, res) => {
  * GET /api/products
  * Full catalog query with cursor pagination, filters & sorting
  */
-productsRouter.get('/', (req, res) => {
-  const productCount = (db.prepare('SELECT COUNT(*) as cnt FROM products').get() as any)?.cnt || 0;
+productsRouter.get('/', async (req, res) => {
+  const countRes = await db.queryOne<{ cnt: string | number }>('SELECT COUNT(*) as cnt FROM products');
+  const productCount = Number(countRes?.cnt ?? 0);
+
   if (productCount === 0) {
     try {
       console.log('🌱 Products endpoint detected 0 products. Auto-seeding catalog...');
-      seedFullDatabase(db);
+      await seedFullDatabase(db);
     } catch (e) {
       console.error('Auto-seed error in products router:', e);
     }
@@ -197,7 +203,7 @@ productsRouter.get('/', (req, res) => {
     page,
   } = req.query;
 
-  const activeOffers = getActiveAutoOffers();
+  const activeOffers = await getActiveAutoOffers();
   const parsedLimit = Math.min(Math.max(parseInt(limit as string, 10) || 12, 1), 50);
 
   const whereClauses: string[] = ['p.is_active = 1'];
@@ -205,20 +211,36 @@ productsRouter.get('/', (req, res) => {
 
   // Filter by category (slug or id)
   if (category && category !== 'all') {
-    whereClauses.push('(c.slug = ? OR c.id = ?)');
+    whereClauses.push('(LOWER(c.slug) = LOWER(?) OR c.id = ?)');
     params.push(category, category);
   }
 
   // Filter by gender ('men', 'women', 'unisex')
   if (gender && gender !== 'all') {
-    whereClauses.push('p.gender = ?');
-    params.push(gender);
+    const gLower = (gender as string).toLowerCase();
+    if (gLower === 'women' || gLower === 'men') {
+      whereClauses.push('(LOWER(p.gender) = ? OR LOWER(p.gender) = \'unisex\')');
+      params.push(gLower);
+    } else {
+      whereClauses.push('LOWER(p.gender) = ?');
+      params.push(gLower);
+    }
   }
 
   // Filter by occasion
   if (occasion && occasion !== 'all') {
-    whereClauses.push('p.occasion LIKE ?');
-    params.push(`%${occasion}%`);
+    const rawOccasion = (occasion as string).trim();
+    const keywords = rawOccasion
+      .split(/[\s&,/]+/)
+      .filter((k) => k.length > 2 && k.toLowerCase() !== 'and');
+    if (keywords.length > 0) {
+      const occOrClauses = keywords.map(() => 'p.occasion ILIKE ?');
+      whereClauses.push(`(${occOrClauses.join(' OR ')})`);
+      keywords.forEach((k) => params.push(`%${k}%`));
+    } else {
+      whereClauses.push('p.occasion ILIKE ?');
+      params.push(`%${rawOccasion}%`);
+    }
   }
 
   // Filter by price range (paise)
@@ -277,16 +299,16 @@ productsRouter.get('/', (req, res) => {
   const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
   // Get total matching count
-  const countRow = db
+  const countRow = (await db
     .prepare(`
       SELECT COUNT(DISTINCT p.id) as total
       FROM products p
       JOIN categories c ON c.id = p.category_id
       ${whereSql}
     `)
-    .get(...params) as { total: number };
+    .get(...params)) as { total: string | number };
 
-  const total = countRow?.total || 0;
+  const total = Number(countRow?.total ?? 0);
 
   // Pagination via offset or cursor
   let offset = 0;
@@ -305,7 +327,7 @@ productsRouter.get('/', (req, res) => {
 
   const queryParams = [...params, parsedLimit, offset];
 
-  const rows = db
+  const rows = (await db
     .prepare(`
       SELECT
         p.id, p.category_id, p.name, p.slug, p.description, p.fabric, p.occasion,
@@ -315,27 +337,14 @@ productsRouter.get('/', (req, res) => {
           SELECT SUM(stock)
           FROM product_variants pv
           WHERE pv.product_id = p.id AND pv.is_active = 1
-        ) as total_stock,
-        (
-          SELECT json_group_array(
-            json_object(
-              'id', pv.id,
-              'size', pv.size,
-              'color', pv.color,
-              'variant_sku', pv.variant_sku,
-              'stock', pv.stock
-            )
-          )
-          FROM product_variants pv
-          WHERE pv.product_id = p.id AND pv.is_active = 1
-        ) as variants_json
+        ) as total_stock
       FROM products p
       JOIN categories c ON c.id = p.category_id
       ${whereSql}
       ORDER BY ${orderBy}
       LIMIT ? OFFSET ?
     `)
-    .all(...queryParams) as Array<{
+    .all(...queryParams)) as Array<{
       id: string;
       category_id: string;
       name: string;
@@ -344,34 +353,53 @@ productsRouter.get('/', (req, res) => {
       fabric: string;
       occasion: string;
       gender: string;
-      mrp: number;
-      discount_percent: number;
+      mrp: number | string;
+      discount_percent: number | string;
       sku: string;
       images: string;
       is_featured: number;
       created_at: string;
       category_name: string;
       category_slug: string;
-      total_stock: number | null;
-      variants_json: string;
+      total_stock: number | string | null;
     }>;
+
+  // Fetch variants for all products returned on current page
+  const productIds = rows.map((r) => r.id);
+  const variantsMap: Record<string, any[]> = {};
+
+  if (productIds.length > 0) {
+    const allVariants = await db
+      .prepare(`
+        SELECT id, product_id, size, color, variant_sku, stock
+        FROM product_variants
+        WHERE is_active = 1 AND product_id IN (${productIds.map(() => '?').join(', ')})
+      `)
+      .all(...productIds);
+
+    for (const v of allVariants) {
+      if (!variantsMap[v.product_id]) variantsMap[v.product_id] = [];
+      variantsMap[v.product_id].push({
+        id: v.id,
+        size: v.size,
+        color: v.color,
+        variant_sku: v.variant_sku,
+        stock: Number(v.stock),
+      });
+    }
+  }
 
   const products = rows.map((p) => {
     let images: string[] = [];
     try {
-      images = JSON.parse(p.images);
+      images = typeof p.images === 'string' ? JSON.parse(p.images) : p.images || [];
     } catch {
       images = [];
     }
 
-    let variants: any[] = [];
-    try {
-      variants = JSON.parse(p.variants_json);
-    } catch {
-      variants = [];
-    }
-
-    const priceInfo = computePrices(p.mrp, p.discount_percent, p.id, p.category_id, activeOffers);
+    const mrp = Number(p.mrp);
+    const discPct = Number(p.discount_percent);
+    const priceInfo = computePrices(mrp, discPct, p.id, p.category_id, activeOffers);
 
     return {
       id: p.id,
@@ -387,8 +415,8 @@ productsRouter.get('/', (req, res) => {
       category_slug: p.category_slug,
       images,
       is_featured: Boolean(p.is_featured),
-      total_stock: p.total_stock || 0,
-      variants,
+      total_stock: Number(p.total_stock || 0),
+      variants: variantsMap[p.id] || [],
       price: priceInfo,
     };
   });
@@ -415,10 +443,10 @@ productsRouter.get('/', (req, res) => {
  * GET /api/products/:slug
  * Full product detail + all variants + 4 related products
  */
-productsRouter.get('/:slug', (req, res) => {
+productsRouter.get('/:slug', async (req, res) => {
   const { slug } = req.params;
 
-  const product = db
+  const product = (await db
     .prepare(`
       SELECT
         p.id, p.category_id, p.name, p.slug, p.description, p.long_description,
@@ -429,7 +457,7 @@ productsRouter.get('/:slug', (req, res) => {
       JOIN categories c ON c.id = p.category_id
       WHERE p.slug = ? AND p.is_active = 1
     `)
-    .get(slug) as any;
+    .get(slug)) as any;
 
   if (!product) {
     return res.status(404).json({
@@ -442,41 +470,44 @@ productsRouter.get('/:slug', (req, res) => {
 
   let images: string[] = [];
   try {
-    images = JSON.parse(product.images);
+    images = typeof product.images === 'string' ? JSON.parse(product.images) : product.images || [];
   } catch {
     images = [];
   }
 
   // Variants
-  const variants = db
+  const variantsRows = (await db
     .prepare(`
       SELECT id, size, color, variant_sku, price_override, stock, weight_grams
       FROM product_variants
       WHERE product_id = ? AND is_active = 1
       ORDER BY size, color
     `)
-    .all(product.id) as Array<{
+    .all(product.id)) as Array<{
       id: string;
       size: string;
       color: string;
       variant_sku: string;
-      price_override: number | null;
-      stock: number;
-      weight_grams: number;
+      price_override: number | string | null;
+      stock: number | string;
+      weight_grams: number | string;
     }>;
 
+  const variants = variantsRows.map((v) => ({
+    ...v,
+    price_override: v.price_override !== null ? Number(v.price_override) : null,
+    stock: Number(v.stock),
+    weight_grams: Number(v.weight_grams),
+  }));
+
   // Active offers computation
-  const activeOffers = getActiveAutoOffers();
-  const priceInfo = computePrices(
-    product.mrp,
-    product.discount_percent,
-    product.id,
-    product.category_id,
-    activeOffers
-  );
+  const activeOffers = await getActiveAutoOffers();
+  const mrp = Number(product.mrp);
+  const discPct = Number(product.discount_percent);
+  const priceInfo = computePrices(mrp, discPct, product.id, product.category_id, activeOffers);
 
   // 4 related products from same category
-  const relatedRows = db
+  const relatedRows = (await db
     .prepare(`
       SELECT
         p.id, p.category_id, p.name, p.slug, p.mrp, p.discount_percent, p.images,
@@ -487,16 +518,18 @@ productsRouter.get('/:slug', (req, res) => {
       ORDER BY p.is_featured DESC, p.created_at DESC
       LIMIT 4
     `)
-    .all(product.category_id, product.id) as any[];
+    .all(product.category_id, product.id)) as any[];
 
   const relatedProducts = relatedRows.map((rp) => {
     let rImages: string[] = [];
     try {
-      rImages = JSON.parse(rp.images);
+      rImages = typeof rp.images === 'string' ? JSON.parse(rp.images) : rp.images || [];
     } catch {
       rImages = [];
     }
-    const rPrices = computePrices(rp.mrp, rp.discount_percent, rp.id, rp.category_id, activeOffers);
+    const rMrp = Number(rp.mrp);
+    const rDisc = Number(rp.discount_percent);
+    const rPrices = computePrices(rMrp, rDisc, rp.id, rp.category_id, activeOffers);
     return {
       id: rp.id,
       name: rp.name,
@@ -510,6 +543,8 @@ productsRouter.get('/:slug', (req, res) => {
   return res.json({
     data: {
       ...product,
+      mrp: mrp,
+      discount_percent: discPct,
       images,
       price: priceInfo,
       variants,

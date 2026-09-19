@@ -1,7 +1,7 @@
 -- ============================================================================
 -- Shikkis E-Commerce Database Schema
--- SQLite (better-sqlite3) with WAL mode and foreign keys ON
--- Monetary values stored as INTEGER paise (₹1.00 = 100 paise). NEVER floats.
+-- PostgreSQL Schema
+-- Monetary values stored as INTEGER / BIGINT paise (₹1.00 = 100 paise). NEVER floats.
 -- ============================================================================
 
 -- 1. Users
@@ -14,8 +14,8 @@ CREATE TABLE IF NOT EXISTS users (
   phone         TEXT,
   role          TEXT NOT NULL DEFAULT 'customer' CHECK(role IN ('owner', 'customer')),
   is_active     INTEGER NOT NULL DEFAULT 1,
-  created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 2. Customer Profiles
@@ -24,10 +24,10 @@ CREATE TABLE IF NOT EXISTS customer_profiles (
   user_id         TEXT UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   date_of_birth   TEXT,
   total_orders    INTEGER NOT NULL DEFAULT 0,
-  lifetime_spend  INTEGER NOT NULL DEFAULT 0, -- in paise
+  lifetime_spend  BIGINT NOT NULL DEFAULT 0, -- in paise
   last_order_date TEXT,
-  created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 3. Refresh Tokens
@@ -35,9 +35,9 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
   id         TEXT PRIMARY KEY,
   user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   token_hash TEXT NOT NULL,
-  expires_at DATETIME NOT NULL,
-  revoked_at DATETIME,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 4. Addresses
@@ -53,8 +53,8 @@ CREATE TABLE IF NOT EXISTS addresses (
   pincode    TEXT NOT NULL,
   phone      TEXT NOT NULL,
   is_default INTEGER NOT NULL DEFAULT 0,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 5. Categories
@@ -66,8 +66,8 @@ CREATE TABLE IF NOT EXISTS categories (
   image_url     TEXT,
   display_order INTEGER NOT NULL DEFAULT 0,
   is_active     INTEGER NOT NULL DEFAULT 1,
-  created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 6. Products
@@ -82,14 +82,14 @@ CREATE TABLE IF NOT EXISTS products (
   occasion          TEXT,
   gender            TEXT NOT NULL DEFAULT 'women' CHECK(gender IN ('men', 'women', 'unisex')),
   care_instructions TEXT,
-  mrp               INTEGER NOT NULL, -- in paise
+  mrp               BIGINT NOT NULL, -- in paise
   discount_percent  INTEGER NOT NULL DEFAULT 0,
   sku               TEXT UNIQUE NOT NULL,
   images            TEXT NOT NULL DEFAULT '[]', -- JSON array of image URLs
   is_active         INTEGER NOT NULL DEFAULT 1,
   is_featured       INTEGER NOT NULL DEFAULT 0,
-  created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 7. Product Variants
@@ -99,12 +99,12 @@ CREATE TABLE IF NOT EXISTS product_variants (
   size           TEXT NOT NULL,
   color          TEXT NOT NULL,
   variant_sku    TEXT UNIQUE NOT NULL,
-  price_override INTEGER, -- in paise, overrides product mrp if set
+  price_override BIGINT, -- in paise, overrides product mrp if set
   stock          INTEGER NOT NULL DEFAULT 0,
   weight_grams   INTEGER NOT NULL DEFAULT 0,
   is_active      INTEGER NOT NULL DEFAULT 1,
-  created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(product_id, size, color)
 );
 
@@ -114,11 +114,11 @@ CREATE TABLE IF NOT EXISTS offers (
   name             TEXT NOT NULL,
   code             TEXT UNIQUE, -- NULL allowed for auto-applied promotions
   type             TEXT NOT NULL CHECK(type IN ('percent', 'flat', 'bxgy', 'free_shipping')),
-  value            INTEGER NOT NULL, -- percentage or paise
-  max_discount     INTEGER, -- in paise, for percent discounts
-  min_cart_value   INTEGER NOT NULL DEFAULT 0, -- in paise
-  starts_at        DATETIME NOT NULL,
-  ends_at          DATETIME NOT NULL,
+  value            BIGINT NOT NULL, -- percentage or paise
+  max_discount     BIGINT, -- in paise, for percent discounts
+  min_cart_value   BIGINT NOT NULL DEFAULT 0, -- in paise
+  starts_at        TIMESTAMPTZ NOT NULL,
+  ends_at          TIMESTAMPTZ NOT NULL,
   is_active        INTEGER NOT NULL DEFAULT 1,
   stackable        INTEGER NOT NULL DEFAULT 0,
   usage_limit      INTEGER, -- overall redemption limit
@@ -129,8 +129,8 @@ CREATE TABLE IF NOT EXISTS offers (
   banner_image_url TEXT,
   priority         INTEGER NOT NULL DEFAULT 0,
   created_by       TEXT REFERENCES users(id) ON DELETE SET NULL,
-  created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 9. Offer Redemptions
@@ -138,9 +138,9 @@ CREATE TABLE IF NOT EXISTS offer_redemptions (
   id          TEXT PRIMARY KEY,
   offer_id    TEXT NOT NULL REFERENCES offers(id) ON DELETE CASCADE,
   user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  order_id    TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-  redeemed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  order_id    TEXT,
+  redeemed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 10. Banners
@@ -152,12 +152,12 @@ CREATE TABLE IF NOT EXISTS banners (
   cta_text      TEXT NOT NULL DEFAULT 'Shop Now',
   cta_link      TEXT NOT NULL DEFAULT '/catalog',
   display_order INTEGER NOT NULL DEFAULT 0,
-  starts_at     DATETIME,
-  ends_at       DATETIME,
+  starts_at     TIMESTAMPTZ,
+  ends_at       TIMESTAMPTZ,
   is_active     INTEGER NOT NULL DEFAULT 1,
   created_by    TEXT REFERENCES users(id) ON DELETE SET NULL,
-  created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 11. Carts
@@ -166,9 +166,9 @@ CREATE TABLE IF NOT EXISTS carts (
   user_id     TEXT REFERENCES users(id) ON DELETE CASCADE,
   session_id  TEXT,
   coupon_code TEXT,
-  expires_at  DATETIME,
-  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  expires_at  TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 12. Cart Items
@@ -177,23 +177,21 @@ CREATE TABLE IF NOT EXISTS cart_items (
   cart_id    TEXT NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
   variant_id TEXT NOT NULL REFERENCES product_variants(id) ON DELETE CASCADE,
   quantity   INTEGER NOT NULL DEFAULT 1,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(cart_id, variant_id)
 );
 
 -- 13. Orders
--- Note: delivery_address_snapshot stores the complete address as JSON at purchase time.
--- Orders NEVER mutate if a customer modifies or deletes their address later.
 CREATE TABLE IF NOT EXISTS orders (
   id                        TEXT PRIMARY KEY,
   order_number              TEXT UNIQUE NOT NULL,
   user_id                   TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-  subtotal                  INTEGER NOT NULL, -- in paise
-  discount_amount           INTEGER NOT NULL DEFAULT 0, -- in paise
-  shipping_cost             INTEGER NOT NULL DEFAULT 0, -- in paise
-  tax                       INTEGER NOT NULL DEFAULT 0, -- in paise
-  total_amount              INTEGER NOT NULL, -- in paise
+  subtotal                  BIGINT NOT NULL, -- in paise
+  discount_amount           BIGINT NOT NULL DEFAULT 0, -- in paise
+  shipping_cost             BIGINT NOT NULL DEFAULT 0, -- in paise
+  tax                       BIGINT NOT NULL DEFAULT 0, -- in paise
+  total_amount              BIGINT NOT NULL, -- in paise
   fulfillment_type          TEXT NOT NULL DEFAULT 'delivery' CHECK(fulfillment_type IN ('delivery', 'pickup')),
   delivery_address_snapshot TEXT, -- JSON snapshot of address
   pickup_slot               TEXT,
@@ -204,12 +202,11 @@ CREATE TABLE IF NOT EXISTS orders (
   order_status              TEXT NOT NULL DEFAULT 'placed' CHECK(order_status IN ('placed', 'confirmed', 'ready_for_pickup', 'out_for_delivery', 'delivered', 'picked_up', 'cancelled')),
   customer_notes            TEXT,
   internal_notes            TEXT,
-  created_at                DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at                DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at                TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at                TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 14. Order Items
--- Purchase snapshot of variant and price in INTEGER paise
 CREATE TABLE IF NOT EXISTS order_items (
   id                   TEXT PRIMARY KEY,
   order_id             TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
@@ -218,9 +215,9 @@ CREATE TABLE IF NOT EXISTS order_items (
   size                 TEXT NOT NULL,
   color                TEXT NOT NULL,
   quantity             INTEGER NOT NULL,
-  price_at_purchase    INTEGER NOT NULL, -- in paise
-  discount_at_purchase INTEGER NOT NULL DEFAULT 0, -- in paise
-  created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  price_at_purchase    BIGINT NOT NULL, -- in paise
+  discount_at_purchase BIGINT NOT NULL DEFAULT 0, -- in paise
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 15. Order Status History
@@ -230,7 +227,7 @@ CREATE TABLE IF NOT EXISTS order_status_history (
   status     TEXT NOT NULL,
   note       TEXT,
   changed_by TEXT REFERENCES users(id) ON DELETE SET NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 16. Audit Log
@@ -242,7 +239,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
   entity_id   TEXT,
   changes     TEXT, -- JSON representation of diff or payload
   ip_address  TEXT,
-  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ============================================================================
@@ -272,21 +269,17 @@ CREATE INDEX IF NOT EXISTS idx_order_status_history_changed_by ON order_status_h
 CREATE INDEX IF NOT EXISTS idx_audit_log_user_id ON audit_log(user_id);
 
 -- Filter & Order By Indexes per spec
--- products: category_id, is_active, is_featured, gender
 CREATE INDEX IF NOT EXISTS idx_products_is_active ON products(is_active);
 CREATE INDEX IF NOT EXISTS idx_products_is_featured ON products(is_featured);
 CREATE INDEX IF NOT EXISTS idx_products_gender ON products(gender);
 CREATE INDEX IF NOT EXISTS idx_products_active_category ON products(category_id, is_active);
 
--- orders: user_id, order_status, payment_status, created_at DESC
 CREATE INDEX IF NOT EXISTS idx_orders_order_status ON orders(order_status);
 CREATE INDEX IF NOT EXISTS idx_orders_payment_status ON orders(payment_status);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at_desc ON orders(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_orders_user_created ON orders(user_id, created_at DESC);
 
--- offers: is_active + starts_at + ends_at
 CREATE INDEX IF NOT EXISTS idx_offers_active_window ON offers(is_active, starts_at, ends_at);
 
--- categories & banners ordering
 CREATE INDEX IF NOT EXISTS idx_categories_display_order ON categories(is_active, display_order);
 CREATE INDEX IF NOT EXISTS idx_banners_display_order ON banners(is_active, display_order);

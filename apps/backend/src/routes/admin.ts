@@ -56,7 +56,7 @@ const upload = multer({
  * POST /api/admin/upload
  * Multi-part single image upload via multer
  */
-adminRouter.post('/upload', upload.single('image'), (req, res, next) => {
+adminRouter.post('/upload', upload.single('image'), async (req, res, next) => {
   try {
     if (!req.file) {
       res.status(400).json({
@@ -83,7 +83,7 @@ adminRouter.post('/upload', upload.single('image'), (req, res, next) => {
  * GET /api/admin/products
  * List products with filters, sorting, variant stock roll-ups
  */
-adminRouter.get('/products', (req, res, next) => {
+adminRouter.get('/products', async (req, res, next) => {
   try {
     const db = getDb();
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
@@ -165,10 +165,10 @@ adminRouter.get('/products', (req, res, next) => {
       WHERE ${whereClause}
     `;
 
-    const countRow = db.prepare(countQuery).get(...params) as { total: number };
+    const countRow = await db.prepare(countQuery).get(...params) as { total: number };
     const total = countRow ? countRow.total : 0;
 
-    const rows = db.prepare(query).all(...params, limit, offset) as any[];
+    const rows = await db.prepare(query).all(...params, limit, offset) as any[];
 
     const products = rows.map((r) => {
       let parsedImages: string[] = [];
@@ -206,10 +206,10 @@ adminRouter.get('/products', (req, res, next) => {
  * GET /api/admin/products/export
  * Downloadable CSV of products (MUST be defined before /products/:id)
  */
-adminRouter.get('/products/export', (_req, res, next) => {
+adminRouter.get('/products/export', async (_req, res, next) => {
   try {
     const db = getDb();
-    const rows = db.prepare(`
+    const rows = await db.prepare(`
       SELECT
         p.id, p.name, p.sku, c.name as category_name, p.gender,
         p.mrp, p.discount_percent, p.is_active, p.created_at,
@@ -257,10 +257,10 @@ adminRouter.get('/products/export', (_req, res, next) => {
  * GET /api/admin/products/:id
  * Single product detail with all variants for the editor
  */
-adminRouter.get('/products/:id', (req, res, next) => {
+adminRouter.get('/products/:id', async (req, res, next) => {
   try {
     const db = getDb();
-    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id) as any;
+    const product = await db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id) as any;
 
     if (!product) {
       res.status(404).json({
@@ -269,9 +269,10 @@ adminRouter.get('/products/:id', (req, res, next) => {
       return;
     }
 
-    const variants = db
+    const variants = (await db
       .prepare('SELECT * FROM product_variants WHERE product_id = ? ORDER BY size, color')
-      .all(req.params.id) as any[];
+      .all(req.params.id)) as any[];
+
 
     let parsedImages: string[] = [];
     try {
@@ -301,7 +302,7 @@ adminRouter.get('/products/:id', (req, res, next) => {
  * POST /api/admin/products
  * Create product with specifications & variant matrix
  */
-adminRouter.post('/products', (req, res, next) => {
+adminRouter.post('/products', async (req, res, next) => {
   try {
     const db = getDb();
     const body = req.body;
@@ -338,13 +339,13 @@ adminRouter.post('/products', (req, res, next) => {
       .replace(/(^-|-$)+/g, '');
     let slug = baseSlug;
     let counter = 1;
-    while (db.prepare('SELECT id FROM products WHERE slug = ?').get(slug)) {
+    while (await db.prepare('SELECT id FROM products WHERE slug = ?').get(slug)) {
       slug = `${baseSlug}-${counter++}`;
     }
 
     const productId = `prd_${uuidv4().replace(/-/g, '').slice(0, 10)}`;
 
-    const insertProduct = db.prepare(`
+    const insertProduct = await db.prepare(`
       INSERT INTO products (
         id, category_id, name, slug, description, long_description,
         fabric, occasion, gender, care_instructions, mrp, discount_percent,
@@ -356,19 +357,19 @@ adminRouter.post('/products', (req, res, next) => {
       )
     `);
 
-    const insertVariant = db.prepare(`
+    const insertVariant = await db.prepare(`
       INSERT INTO product_variants (
         id, product_id, size, color, variant_sku, price_override, stock, is_active
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const insertAudit = db.prepare(`
+    const insertAudit = await db.prepare(`
       INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, changes, ip_address)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const createTx = db.transaction(() => {
-      insertProduct.run(
+    await db.transaction(async () => {
+      await insertProduct.run(
         productId,
         category_id,
         name,
@@ -389,7 +390,7 @@ adminRouter.post('/products', (req, res, next) => {
 
       for (const v of variants) {
         const variantId = `var_${uuidv4().replace(/-/g, '').slice(0, 10)}`;
-        insertVariant.run(
+        await insertVariant.run(
           variantId,
           productId,
           v.size,
@@ -401,7 +402,7 @@ adminRouter.post('/products', (req, res, next) => {
         );
       }
 
-      insertAudit.run(
+      await insertAudit.run(
         `aud_${uuidv4()}`,
         req.user?.sub,
         'CREATE_PRODUCT',
@@ -411,8 +412,6 @@ adminRouter.post('/products', (req, res, next) => {
         req.ip
       );
     });
-
-    createTx();
 
     res.status(201).json({
       product_id: productId,
@@ -434,13 +433,13 @@ adminRouter.post('/products', (req, res, next) => {
  * PUT /api/admin/products/:id
  * Update product and synchronize variants
  */
-adminRouter.put('/products/:id', (req, res, next) => {
+adminRouter.put('/products/:id', async (req, res, next) => {
   try {
     const db = getDb();
     const productId = req.params.id;
     const body = req.body;
 
-    const existing = db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
+    const existing = await db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
     if (!existing) {
       res.status(404).json({
         error: { code: 'PRODUCT_NOT_FOUND', message: 'Product not found' },
@@ -466,7 +465,7 @@ adminRouter.put('/products/:id', (req, res, next) => {
       variants = [],
     } = body;
 
-    const updateProduct = db.prepare(`
+    const updateProduct = await db.prepare(`
       UPDATE products SET
         category_id = ?, name = ?, description = ?, long_description = ?,
         fabric = ?, occasion = ?, gender = ?, care_instructions = ?,
@@ -475,7 +474,7 @@ adminRouter.put('/products/:id', (req, res, next) => {
       WHERE id = ?
     `);
 
-    const upsertVariant = db.prepare(`
+    const upsertVariant = await db.prepare(`
       INSERT INTO product_variants (
         id, product_id, size, color, variant_sku, price_override, stock, is_active, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -487,8 +486,8 @@ adminRouter.put('/products/:id', (req, res, next) => {
         updated_at = CURRENT_TIMESTAMP
     `);
 
-    const updateTx = db.transaction(() => {
-      updateProduct.run(
+    await db.transaction(async () => {
+      await updateProduct.run(
         category_id,
         name,
         description,
@@ -508,7 +507,7 @@ adminRouter.put('/products/:id', (req, res, next) => {
 
       for (const v of variants) {
         const variantId = v.id || `var_${uuidv4().replace(/-/g, '').slice(0, 10)}`;
-        upsertVariant.run(
+        await upsertVariant.run(
           variantId,
           productId,
           v.size,
@@ -520,7 +519,7 @@ adminRouter.put('/products/:id', (req, res, next) => {
         );
       }
 
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, changes, ip_address)
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `).run(
@@ -534,8 +533,6 @@ adminRouter.put('/products/:id', (req, res, next) => {
       );
     });
 
-    updateTx();
-
     res.json({ message: 'Product updated successfully' });
   } catch (err) {
     next(err);
@@ -546,21 +543,22 @@ adminRouter.put('/products/:id', (req, res, next) => {
  * PATCH /api/admin/products/:id/status
  * Inline optimistic active/inactive toggle
  */
-adminRouter.patch('/products/:id/status', (req, res, next) => {
+adminRouter.patch('/products/:id/status', async (req, res, next) => {
   try {
     const db = getDb();
     const { is_active } = req.body;
 
-    const result = db
+    const result = await db
       .prepare('UPDATE products SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
       .run(is_active ? 1 : 0, req.params.id);
+
 
     if (result.changes === 0) {
       res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
       return;
     }
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, changes, ip_address)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
@@ -583,7 +581,7 @@ adminRouter.patch('/products/:id/status', (req, res, next) => {
  * POST /api/admin/products/bulk
  * Bulk activate, deactivate, or delete
  */
-adminRouter.post('/products/bulk', (req, res, next) => {
+adminRouter.post('/products/bulk', async (req, res, next) => {
   try {
     const db = getDb();
     const { ids, action } = req.body;
@@ -595,18 +593,18 @@ adminRouter.post('/products/bulk', (req, res, next) => {
 
     const placeholders = ids.map(() => '?').join(',');
 
-    const bulkTx = db.transaction(() => {
+    await db.transaction(async () => {
       if (action === 'activate') {
-        db.prepare(`UPDATE products SET is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`).run(...ids);
+        await db.prepare(`UPDATE products SET is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`).run(...ids);
       } else if (action === 'deactivate') {
-        db.prepare(`UPDATE products SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`).run(...ids);
+        await db.prepare(`UPDATE products SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`).run(...ids);
       } else if (action === 'delete') {
-        db.prepare(`DELETE FROM products WHERE id IN (${placeholders})`).run(...ids);
+        await db.prepare(`DELETE FROM products WHERE id IN (${placeholders})`).run(...ids);
       } else {
         throw new Error('Invalid bulk action');
       }
 
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, changes, ip_address)
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `).run(
@@ -620,8 +618,6 @@ adminRouter.post('/products/bulk', (req, res, next) => {
       );
     });
 
-    bulkTx();
-
     res.json({ success: true, count: ids.length, action });
   } catch (err) {
     next(err);
@@ -634,7 +630,7 @@ adminRouter.post('/products/bulk', (req, res, next) => {
  * GET /api/admin/inventory
  * All variants sortable by stock ascending, with low stock flags
  */
-adminRouter.get('/inventory', (req, res, next) => {
+adminRouter.get('/inventory', async (req, res, next) => {
   try {
     const db = getDb();
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
@@ -659,7 +655,7 @@ adminRouter.get('/inventory', (req, res, next) => {
 
     const whereClause = conditions.join(' AND ');
 
-    const rows = db.prepare(`
+    const rows = await db.prepare(`
       SELECT
         pv.id as variant_id,
         pv.variant_sku,
@@ -682,7 +678,7 @@ adminRouter.get('/inventory', (req, res, next) => {
       LIMIT ? OFFSET ?
     `).all(...params, limit, offset) as any[];
 
-    const countRow = db.prepare(`
+    const countRow = await db.prepare(`
       SELECT COUNT(*) as total
       FROM product_variants pv
       JOIN products p ON pv.product_id = p.id
@@ -713,7 +709,7 @@ adminRouter.get('/inventory', (req, res, next) => {
  * POST /api/admin/inventory/batch
  * Batch update stock for selected variant IDs, written to audit_log
  */
-adminRouter.post('/inventory/batch', (req, res, next) => {
+adminRouter.post('/inventory/batch', async (req, res, next) => {
   try {
     const db = getDb();
     const { variant_ids, stock } = req.body;
@@ -725,19 +721,19 @@ adminRouter.post('/inventory/batch', (req, res, next) => {
       return;
     }
 
-    const selectStmt = db.prepare('SELECT id, stock, variant_sku FROM product_variants WHERE id = ?');
-    const updateStmt = db.prepare('UPDATE product_variants SET stock = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
-    const auditStmt = db.prepare(`
+    const selectStmt = await db.prepare('SELECT id, stock, variant_sku FROM product_variants WHERE id = ?');
+    const updateStmt = await db.prepare('UPDATE product_variants SET stock = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+    const auditStmt = await db.prepare(`
       INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, changes, ip_address)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const batchTx = db.transaction(() => {
+    await db.transaction(async () => {
       for (const vId of variant_ids) {
-        const current = selectStmt.get(vId) as any;
+        const current = await selectStmt.get(vId) as any;
         if (current) {
-          updateStmt.run(stock, vId);
-          auditStmt.run(
+          await updateStmt.run(stock, vId);
+          await auditStmt.run(
             `aud_${uuidv4()}`,
             req.user?.sub,
             'BATCH_STOCK_UPDATE',
@@ -754,8 +750,6 @@ adminRouter.post('/inventory/batch', (req, res, next) => {
       }
     });
 
-    batchTx();
-
     res.json({
       success: true,
       updated_count: variant_ids.length,
@@ -771,10 +765,10 @@ adminRouter.post('/inventory/batch', (req, res, next) => {
  * GET /api/admin/inventory/audit-log
  * Recent inventory audit logs
  */
-adminRouter.get('/inventory/audit-log', (_req, res, next) => {
+adminRouter.get('/inventory/audit-log', async (_req, res, next) => {
   try {
     const db = getDb();
-    const logs = db.prepare(`
+    const logs = await db.prepare(`
       SELECT
         a.id, a.action, a.entity_id, a.changes, a.created_at,
         u.first_name, u.last_name, u.email
@@ -829,10 +823,10 @@ const offerSchema = z.object({
  * GET /api/admin/offers
  * Offers list annotated with dynamically derived status and redemption stats
  */
-adminRouter.get('/offers', (_req, res, next) => {
+adminRouter.get('/offers', async (_req, res, next) => {
   try {
     const db = getDb();
-    const offers = db.prepare(`
+    const offers = await db.prepare(`
       SELECT
         o.*,
         COUNT(DISTINCT r.id) as redemption_count,
@@ -883,7 +877,7 @@ adminRouter.get('/offers', (_req, res, next) => {
  * POST /api/admin/offers
  * Create promotional offer with full validation
  */
-adminRouter.post('/offers', (req, res, next) => {
+adminRouter.post('/offers', async (req, res, next) => {
   try {
     const parseResult = offerSchema.safeParse(req.body);
     if (!parseResult.success) {
@@ -929,7 +923,7 @@ adminRouter.post('/offers', (req, res, next) => {
     // Validation 4: Duplicate coupon code
     const cleanCode = data.code?.trim().toUpperCase() || null;
     if (cleanCode) {
-      const existing = db.prepare('SELECT id FROM offers WHERE code = ?').get(cleanCode);
+      const existing = await db.prepare('SELECT id FROM offers WHERE code = ?').get(cleanCode);
       if (existing) {
         res.status(400).json({
           error: { code: 'DUPLICATE_CODE', message: `Coupon code "${cleanCode}" is already in use.` },
@@ -940,7 +934,7 @@ adminRouter.post('/offers', (req, res, next) => {
 
     const offerId = `off_${uuidv4().replace(/-/g, '').slice(0, 10)}`;
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO offers (
         id, name, code, type, value, max_discount, min_cart_value,
         starts_at, ends_at, is_active, stackable, usage_limit,
@@ -971,7 +965,7 @@ adminRouter.post('/offers', (req, res, next) => {
       req.user?.sub
     );
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, changes, ip_address)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
@@ -997,17 +991,17 @@ adminRouter.post('/offers', (req, res, next) => {
  * PATCH /api/admin/offers/:id/toggle
  * Toggle active status
  */
-adminRouter.patch('/offers/:id/toggle', (req, res, next) => {
+adminRouter.patch('/offers/:id/toggle', async (req, res, next) => {
   try {
     const db = getDb();
-    const current = db.prepare('SELECT is_active FROM offers WHERE id = ?').get(req.params.id) as any;
+    const current = await db.prepare('SELECT is_active FROM offers WHERE id = ?').get(req.params.id) as any;
     if (!current) {
       res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Offer not found' } });
       return;
     }
 
     const nextState = current.is_active ? 0 : 1;
-    db.prepare('UPDATE offers SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(
+    await db.prepare('UPDATE offers SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(
       nextState,
       req.params.id
     );
@@ -1022,10 +1016,10 @@ adminRouter.patch('/offers/:id/toggle', (req, res, next) => {
  * DELETE /api/admin/offers/:id
  * Delete offer
  */
-adminRouter.delete('/offers/:id', (req, res, next) => {
+adminRouter.delete('/offers/:id', async (req, res, next) => {
   try {
     const db = getDb();
-    const result = db.prepare('DELETE FROM offers WHERE id = ?').run(req.params.id);
+    const result = await db.prepare('DELETE FROM offers WHERE id = ?').run(req.params.id);
     if (result.changes === 0) {
       res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Offer not found' } });
       return;
@@ -1042,10 +1036,10 @@ adminRouter.delete('/offers/:id', (req, res, next) => {
  * GET /api/admin/banners
  * List all banners ordered by display_order
  */
-adminRouter.get('/banners', (_req, res, next) => {
+adminRouter.get('/banners', async (_req, res, next) => {
   try {
     const db = getDb();
-    const banners = db.prepare('SELECT * FROM banners ORDER BY display_order ASC, created_at DESC').all();
+    const banners = await db.prepare('SELECT * FROM banners ORDER BY display_order ASC, created_at DESC').all();
     res.json({
       data: banners.map((b: any) => ({
         ...b,
@@ -1061,7 +1055,7 @@ adminRouter.get('/banners', (_req, res, next) => {
  * POST /api/admin/banners
  * Create carousel banner
  */
-adminRouter.post('/banners', (req, res, next) => {
+adminRouter.post('/banners', async (req, res, next) => {
   try {
     const db = getDb();
     const {
@@ -1080,11 +1074,11 @@ adminRouter.post('/banners', (req, res, next) => {
       return;
     }
 
-    const maxOrderRow = db.prepare('SELECT COALESCE(MAX(display_order), 0) as max_order FROM banners').get() as any;
+    const maxOrderRow = await db.prepare('SELECT COALESCE(MAX(display_order), 0) as max_order FROM banners').get() as any;
     const nextOrder = (maxOrderRow?.max_order || 0) + 1;
     const bannerId = `ban_${uuidv4().replace(/-/g, '').slice(0, 10)}`;
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO banners (
         id, title, subtitle, image_url, cta_text, cta_link,
         display_order, starts_at, ends_at, is_active, created_by
@@ -1113,7 +1107,7 @@ adminRouter.post('/banners', (req, res, next) => {
  * PUT /api/admin/banners/reorder
  * Reorder banners array
  */
-adminRouter.put('/banners/reorder', (req, res, next) => {
+adminRouter.put('/banners/reorder', async (req, res, next) => {
   try {
     const db = getDb();
     const { items } = req.body; // Array of { id, display_order }
@@ -1123,14 +1117,12 @@ adminRouter.put('/banners/reorder', (req, res, next) => {
       return;
     }
 
-    const updateStmt = db.prepare('UPDATE banners SET display_order = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
-    const reorderTx = db.transaction(() => {
+    const updateStmt = await db.prepare('UPDATE banners SET display_order = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+    await db.transaction(async () => {
       for (const itm of items) {
-        updateStmt.run(itm.display_order, itm.id);
+        await updateStmt.run(itm.display_order, itm.id);
       }
     });
-
-    reorderTx();
 
     res.json({ success: true, message: 'Banners reordered successfully.' });
   } catch (err) {
@@ -1142,7 +1134,7 @@ adminRouter.put('/banners/reorder', (req, res, next) => {
  * PATCH /api/admin/banners/:id
  * Update an existing carousel banner
  */
-adminRouter.patch('/banners/:id', (req, res, next) => {
+adminRouter.patch('/banners/:id', async (req, res, next) => {
   try {
     const db = getDb();
     const { id } = req.params;
@@ -1162,7 +1154,7 @@ adminRouter.patch('/banners/:id', (req, res, next) => {
       return;
     }
 
-    const result = db.prepare(`
+    const result = await db.prepare(`
       UPDATE banners
       SET title = ?, subtitle = ?, image_url = ?, cta_text = ?, cta_link = ?,
           starts_at = ?, ends_at = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
@@ -1194,10 +1186,10 @@ adminRouter.patch('/banners/:id', (req, res, next) => {
  * DELETE /api/admin/banners/:id
  * Delete banner
  */
-adminRouter.delete('/banners/:id', (req, res, next) => {
+adminRouter.delete('/banners/:id', async (req, res, next) => {
   try {
     const db = getDb();
-    const result = db.prepare('DELETE FROM banners WHERE id = ?').run(req.params.id);
+    const result = await db.prepare('DELETE FROM banners WHERE id = ?').run(req.params.id);
     if (result.changes === 0) {
       res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Banner not found' } });
       return;
@@ -1232,7 +1224,7 @@ const VALID_PICKUP_TRANSITIONS: Record<string, string[]> = {
  * GET /api/admin/orders
  * List orders with filters for status, payment_status, fulfillment_type, date range, search
  */
-adminRouter.get('/orders', (req, res, next) => {
+adminRouter.get('/orders', async (req, res, next) => {
   try {
     const db = getDb();
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
@@ -1282,7 +1274,7 @@ adminRouter.get('/orders', (req, res, next) => {
       JOIN users u ON o.user_id = u.id
       ${whereClause}
     `;
-    const total = (db.prepare(countSql).get(...params) as any).total;
+    const total = (await db.prepare(countSql).get(...params) as any).total;
 
     // Fetch page rows
     const dataSql = `
@@ -1313,10 +1305,10 @@ adminRouter.get('/orders', (req, res, next) => {
       ORDER BY o.created_at DESC
       LIMIT ? OFFSET ?
     `;
-    const orders = db.prepare(dataSql).all(...params, limit, offset) as any[];
+    const orders = await db.prepare(dataSql).all(...params, limit, offset) as any[];
 
     // Enrich with item summaries
-    const itemsStmt = db.prepare(`
+    const itemsStmt = await db.prepare(`
       SELECT
         oi.id,
         oi.product_name,
@@ -1331,28 +1323,31 @@ adminRouter.get('/orders', (req, res, next) => {
       WHERE oi.order_id = ?
     `);
 
-    const enriched = orders.map((o) => {
-      const items = itemsStmt.all(o.id) as any[];
-      const totalItems = items.reduce((sum, itm) => sum + itm.quantity, 0);
-      const thumbnails: string[] = [];
-      for (const itm of items) {
-        if (itm.images) {
-          try {
-            const parsed = JSON.parse(itm.images);
-            if (Array.isArray(parsed) && parsed.length > 0 && !thumbnails.includes(parsed[0])) {
-              thumbnails.push(parsed[0]);
+    const enriched = await Promise.all(
+      orders.map(async (o) => {
+        const items = (await itemsStmt.all(o.id)) as any[];
+        const totalItems = items.reduce((sum, itm) => sum + Number(itm.quantity), 0);
+        const thumbnails: string[] = [];
+        for (const itm of items) {
+          if (itm.images) {
+            try {
+              const parsed = typeof itm.images === 'string' ? JSON.parse(itm.images) : itm.images;
+              if (Array.isArray(parsed) && parsed.length > 0 && !thumbnails.includes(parsed[0])) {
+                thumbnails.push(parsed[0]);
+              }
+            } catch {
+              // ignore
             }
-          } catch {
-            // ignore
           }
         }
-      }
-      return {
-        ...o,
-        total_items: totalItems,
-        thumbnails: thumbnails.slice(0, 3),
-      };
-    });
+        return {
+          ...o,
+          total_items: totalItems,
+          thumbnails: thumbnails.slice(0, 3),
+        };
+      })
+    );
+
 
     res.json({
       data: enriched,
@@ -1372,7 +1367,7 @@ adminRouter.get('/orders', (req, res, next) => {
  * GET /api/admin/orders/:id
  * Full order detail view with timeline history and allowed next transitions
  */
-adminRouter.get('/orders/:id', (req, res, next) => {
+adminRouter.get('/orders/:id', async (req, res, next) => {
   try {
     const db = getDb();
     const orderSql = `
@@ -1385,7 +1380,7 @@ adminRouter.get('/orders/:id', (req, res, next) => {
       JOIN users u ON o.user_id = u.id
       WHERE o.id = ?
     `;
-    const order = db.prepare(orderSql).get(req.params.id) as any;
+    const order = await db.prepare(orderSql).get(req.params.id) as any;
 
     if (!order) {
       res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Order not found' } });
@@ -1414,7 +1409,7 @@ adminRouter.get('/orders/:id', (req, res, next) => {
       LEFT JOIN products p ON pv.product_id = p.id
       WHERE oi.order_id = ?
     `;
-    const rawItems = db.prepare(itemsSql).all(order.id) as any[];
+    const rawItems = await db.prepare(itemsSql).all(order.id) as any[];
     const items = rawItems.map((itm) => {
       let thumbnail = null;
       if (itm.images) {
@@ -1441,7 +1436,7 @@ adminRouter.get('/orders/:id', (req, res, next) => {
       WHERE osh.order_id = ?
       ORDER BY osh.created_at ASC
     `;
-    const history = db.prepare(historySql).all(order.id);
+    const history = await db.prepare(historySql).all(order.id);
 
     // Compute allowed next statuses based on fulfillment type
     const transitionMap =
@@ -1469,7 +1464,7 @@ adminRouter.get('/orders/:id', (req, res, next) => {
  * Advance order status respecting valid transitions only.
  * Writes order_status_history and audit_log.
  */
-adminRouter.patch('/orders/:id/status', (req, res, next) => {
+adminRouter.patch('/orders/:id/status', async (req, res, next) => {
   try {
     const db = getDb();
     const { status, note } = req.body;
@@ -1479,7 +1474,7 @@ adminRouter.patch('/orders/:id/status', (req, res, next) => {
       return;
     }
 
-    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
+    const order = await db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
     if (!order) {
       res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Order not found' } });
       return;
@@ -1502,23 +1497,23 @@ adminRouter.patch('/orders/:id/status', (req, res, next) => {
       return;
     }
 
-    const updateStatusTx = db.transaction(() => {
+    await db.transaction(async () => {
       // 1. Update order
-      db.prepare('UPDATE orders SET order_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(
+      await db.prepare('UPDATE orders SET order_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(
         status,
         order.id
       );
 
       // 2. Record order status history
       const historyId = `osh_${uuidv4().replace(/-/g, '').slice(0, 10)}`;
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO order_status_history (id, order_id, status, note, changed_by, created_at)
         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       `).run(historyId, order.id, status, note || `Status advanced to ${status}`, req.user?.sub);
 
       // 3. Write audit log
       const auditId = `aud_${uuidv4().replace(/-/g, '').slice(0, 10)}`;
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, changes, ip_address, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       `).run(
@@ -1531,8 +1526,6 @@ adminRouter.patch('/orders/:id/status', (req, res, next) => {
         req.ip || '127.0.0.1'
       );
     });
-
-    updateStatusTx();
 
     res.json({
       success: true,
@@ -1549,25 +1542,25 @@ adminRouter.patch('/orders/:id/status', (req, res, next) => {
  * PATCH /api/admin/orders/:id/notes
  * Update internal notes for an order
  */
-adminRouter.patch('/orders/:id/notes', (req, res, next) => {
+adminRouter.patch('/orders/:id/notes', async (req, res, next) => {
   try {
     const db = getDb();
     const { internal_notes } = req.body;
 
-    const order = db.prepare('SELECT id, internal_notes FROM orders WHERE id = ?').get(req.params.id) as any;
+    const order = await db.prepare('SELECT id, internal_notes FROM orders WHERE id = ?').get(req.params.id) as any;
     if (!order) {
       res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Order not found' } });
       return;
     }
 
-    db.prepare('UPDATE orders SET internal_notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(
+    await db.prepare('UPDATE orders SET internal_notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(
       internal_notes || '',
       order.id
     );
 
     // Audit log
     const auditId = `aud_${uuidv4().replace(/-/g, '').slice(0, 10)}`;
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, changes, ip_address, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `).run(
@@ -1595,7 +1588,7 @@ adminRouter.post('/orders/:id/refund', async (req, res, next) => {
     const db = getDb();
     const { reason } = req.body;
 
-    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
+    const order = await db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
     if (!order) {
       res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Order not found' } });
       return;
@@ -1633,16 +1626,16 @@ adminRouter.post('/orders/:id/refund', async (req, res, next) => {
       }
     }
 
-    const refundTx = db.transaction(() => {
+    await db.transaction(async () => {
       // 1. Update payment status to refunded
-      db.prepare('UPDATE orders SET payment_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(
+      await db.prepare('UPDATE orders SET payment_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(
         'refunded',
         order.id
       );
 
       // 2. Audit log
       const auditId = `aud_${uuidv4().replace(/-/g, '').slice(0, 10)}`;
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, changes, ip_address, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       `).run(
@@ -1661,8 +1654,6 @@ adminRouter.post('/orders/:id/refund', async (req, res, next) => {
       );
     });
 
-    refundTx();
-
     res.json({
       success: true,
       message: `Order ${order.order_number} has been marked refunded.`,
@@ -1678,7 +1669,7 @@ adminRouter.post('/orders/:id/refund', async (req, res, next) => {
  * GET /api/admin/orders/:id/packing-slip
  * Structured packing slip data for warehouse/store printing
  */
-adminRouter.get('/orders/:id/packing-slip', (req, res, next) => {
+adminRouter.get('/orders/:id/packing-slip', async (req, res, next) => {
   try {
     const db = getDb();
     const orderSql = `
@@ -1691,13 +1682,13 @@ adminRouter.get('/orders/:id/packing-slip', (req, res, next) => {
       JOIN users u ON o.user_id = u.id
       WHERE o.id = ?
     `;
-    const order = db.prepare(orderSql).get(req.params.id) as any;
+    const order = await db.prepare(orderSql).get(req.params.id) as any;
     if (!order) {
       res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Order not found' } });
       return;
     }
 
-    const items = db.prepare(`
+    const items = await db.prepare(`
       SELECT
         oi.*,
         pv.variant_sku
@@ -1751,7 +1742,7 @@ adminRouter.get('/orders/:id/packing-slip', (req, res, next) => {
  * GET /api/admin/customers/export
  * Export customer directory to CSV
  */
-adminRouter.get('/customers/export', (req, res, next) => {
+adminRouter.get('/customers/export', async (req, res, next) => {
   try {
     const db = getDb();
     const search = req.query.search as string | undefined;
@@ -1780,7 +1771,7 @@ adminRouter.get('/customers/export', (req, res, next) => {
 
     sql += ' GROUP BY u.id ORDER BY lifetime_spend DESC';
 
-    const customers = db.prepare(sql).all(...params) as any[];
+    const customers = await db.prepare(sql).all(...params) as any[];
 
     // Build CSV
     const headers = ['Customer ID', 'Name', 'Email', 'Phone', 'Join Date', 'Order Count', 'Lifetime Spend (INR)', 'Last Order Date'];
@@ -1809,7 +1800,7 @@ adminRouter.get('/customers/export', (req, res, next) => {
  * GET /api/admin/customers
  * Paginated, searchable, sortable customer directory
  */
-adminRouter.get('/customers', (req, res, next) => {
+adminRouter.get('/customers', async (req, res, next) => {
   try {
     const db = getDb();
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
@@ -1829,7 +1820,7 @@ adminRouter.get('/customers', (req, res, next) => {
 
     // Count
     const countSql = `SELECT COUNT(*) as total FROM users u ${whereClause}`;
-    const total = (db.prepare(countSql).get(...params) as any).total;
+    const total = (await db.prepare(countSql).get(...params) as any).total;
 
     // Sorting safe column mapping
     const sortColumns: Record<string, string> = {
@@ -1863,7 +1854,7 @@ adminRouter.get('/customers', (req, res, next) => {
       LIMIT ? OFFSET ?
     `;
 
-    const customers = db.prepare(dataSql).all(...params, limit, offset);
+    const customers = await db.prepare(dataSql).all(...params, limit, offset);
 
     res.json({
       data: customers,
@@ -1883,10 +1874,10 @@ adminRouter.get('/customers', (req, res, next) => {
  * GET /api/admin/customers/:id
  * Strictly read-only customer detail view with analytics and order history
  */
-adminRouter.get('/customers/:id', (req, res, next) => {
+adminRouter.get('/customers/:id', async (req, res, next) => {
   try {
     const db = getDb();
-    const user = db.prepare(`
+    const user = await db.prepare(`
       SELECT id, first_name, last_name, first_name || ' ' || last_name as name, email, phone, role, is_active, created_at
       FROM users
       WHERE id = ? AND role = 'customer'
@@ -1898,7 +1889,7 @@ adminRouter.get('/customers/:id', (req, res, next) => {
     }
 
     // Analytics summary computed in SQL
-    const analytics = db.prepare(`
+    const analytics = await db.prepare(`
       SELECT
         COUNT(id) as total_orders,
         COUNT(CASE WHEN order_status IN ('delivered', 'picked_up') THEN 1 END) as completed_orders,
@@ -1911,12 +1902,12 @@ adminRouter.get('/customers/:id', (req, res, next) => {
     `).get(user.id) as any;
 
     // Saved addresses
-    const addresses = db.prepare(`
+    const addresses = await db.prepare(`
       SELECT * FROM addresses WHERE user_id = ? ORDER BY is_default DESC, created_at DESC
     `).all(user.id);
 
     // Order history
-    const orders = db.prepare(`
+    const orders = await db.prepare(`
       SELECT
         o.id,
         o.order_number,
@@ -1958,13 +1949,13 @@ adminRouter.get('/customers/:id', (req, res, next) => {
 const getPeriodSqlFilter = (period: string | undefined, tableAlias = 'o') => {
   switch (period) {
     case 'today':
-      return `AND ${tableAlias}.created_at >= datetime('now', 'start of day')`;
+      return `AND ${tableAlias}.created_at >= CURRENT_DATE`;
     case 'week':
-      return `AND ${tableAlias}.created_at >= datetime('now', '-7 days')`;
+      return `AND ${tableAlias}.created_at >= CURRENT_TIMESTAMP - INTERVAL '7 days'`;
     case 'month':
-      return `AND ${tableAlias}.created_at >= datetime('now', '-30 days')`;
+      return `AND ${tableAlias}.created_at >= CURRENT_TIMESTAMP - INTERVAL '30 days'`;
     case 'year':
-      return `AND ${tableAlias}.created_at >= datetime('now', '-365 days')`;
+      return `AND ${tableAlias}.created_at >= CURRENT_TIMESTAMP - INTERVAL '365 days'`;
     case 'all':
     default:
       return '';
@@ -1975,7 +1966,7 @@ const getPeriodSqlFilter = (period: string | undefined, tableAlias = 'o') => {
  * GET /api/admin/reports/kpis
  * KPI cards (Revenue, Orders, AOV, Units Sold) aggregated directly in SQL
  */
-adminRouter.get('/reports/kpis', (req, res, next) => {
+adminRouter.get('/reports/kpis', async (req, res, next) => {
   try {
     const db = getDb();
     const period = (req.query.period as string) || 'month';
@@ -1992,7 +1983,7 @@ adminRouter.get('/reports/kpis', (req, res, next) => {
       WHERE 1=1 ${periodSql}
     `;
 
-    const row = db.prepare(kpiSql).get() as any;
+    const row = await db.prepare(kpiSql).get() as any;
 
     res.json({
       period,
@@ -2010,24 +2001,24 @@ adminRouter.get('/reports/kpis', (req, res, next) => {
  * GET /api/admin/reports/revenue-trend
  * 7-day continuous revenue line chart data in SQL
  */
-adminRouter.get('/reports/revenue-trend', (_req, res, next) => {
+adminRouter.get('/reports/revenue-trend', async (_req, res, next) => {
   try {
     const db = getDb();
 
     // Query daily sums for the last 7 days
     const trendSql = `
       SELECT
-        strftime('%Y-%m-%d', o.created_at) as date,
+        TO_CHAR(o.created_at, 'YYYY-MM-DD') as date,
         COALESCE(SUM(o.total_amount), 0) as revenue,
         COUNT(o.id) as orders
       FROM orders o
       WHERE o.payment_status = 'paid'
-        AND o.created_at >= date('now', '-6 days')
-      GROUP BY strftime('%Y-%m-%d', o.created_at)
+        AND o.created_at >= CURRENT_DATE - INTERVAL '6 days'
+      GROUP BY TO_CHAR(o.created_at, 'YYYY-MM-DD')
       ORDER BY date ASC
     `;
 
-    const rows = db.prepare(trendSql).all() as any[];
+    const rows = await db.prepare(trendSql).all() as any[];
     const rowsMap = new Map(rows.map((r) => [r.date, r]));
 
     // Generate full 7-day array
@@ -2056,7 +2047,7 @@ adminRouter.get('/reports/revenue-trend', (_req, res, next) => {
  * GET /api/admin/reports/top-products
  * Ranked top products by units sold and by revenue
  */
-adminRouter.get('/reports/top-products', (req, res, next) => {
+adminRouter.get('/reports/top-products', async (req, res, next) => {
   try {
     const db = getDb();
     const period = (req.query.period as string) || 'all';
@@ -2088,8 +2079,8 @@ adminRouter.get('/reports/top-products', (req, res, next) => {
       LIMIT 5
     `;
 
-    const topByUnits = db.prepare(byUnitsSql).all();
-    const topByRevenue = db.prepare(byRevenueSql).all();
+    const topByUnits = await db.prepare(byUnitsSql).all();
+    const topByRevenue = await db.prepare(byRevenueSql).all();
 
     res.json({
       period,
@@ -2105,7 +2096,7 @@ adminRouter.get('/reports/top-products', (req, res, next) => {
  * GET /api/admin/reports/category-performance
  * Category breakdown aggregated in SQL
  */
-adminRouter.get('/reports/category-performance', (req, res, next) => {
+adminRouter.get('/reports/category-performance', async (req, res, next) => {
   try {
     const db = getDb();
     const period = (req.query.period as string) || 'all';
@@ -2128,7 +2119,7 @@ adminRouter.get('/reports/category-performance', (req, res, next) => {
       ORDER BY revenue DESC
     `;
 
-    const categories = db.prepare(catSql).all();
+    const categories = await db.prepare(catSql).all();
     res.json({ period, categories });
   } catch (err) {
     next(err);
@@ -2139,7 +2130,7 @@ adminRouter.get('/reports/category-performance', (req, res, next) => {
  * GET /api/admin/reports/sold-items/export
  * Export sold items log to CSV
  */
-adminRouter.get('/reports/sold-items/export', (req, res, next) => {
+adminRouter.get('/reports/sold-items/export', async (req, res, next) => {
   try {
     const db = getDb();
     const period = req.query.period as string | undefined;
@@ -2180,7 +2171,7 @@ adminRouter.get('/reports/sold-items/export', (req, res, next) => {
       ORDER BY o.created_at DESC
     `;
 
-    const rows = db.prepare(sql).all(...params) as any[];
+    const rows = await db.prepare(sql).all(...params) as any[];
 
     const headers = [
       'Order Number',
@@ -2224,7 +2215,7 @@ adminRouter.get('/reports/sold-items/export', (req, res, next) => {
  * GET /api/admin/reports/sold-items
  * Itemised sold items log with category/period filter and pagination
  */
-adminRouter.get('/reports/sold-items', (req, res, next) => {
+adminRouter.get('/reports/sold-items', async (req, res, next) => {
   try {
     const db = getDb();
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
@@ -2256,7 +2247,7 @@ adminRouter.get('/reports/sold-items', (req, res, next) => {
       LEFT JOIN categories c ON p.category_id = c.id
       ${whereClause}
     `;
-    const total = (db.prepare(countSql).get(...params) as any).total;
+    const total = (await db.prepare(countSql).get(...params) as any).total;
 
     const dataSql = `
       SELECT
@@ -2284,7 +2275,7 @@ adminRouter.get('/reports/sold-items', (req, res, next) => {
       LIMIT ? OFFSET ?
     `;
 
-    const items = db.prepare(dataSql).all(...params, limit, offset);
+    const items = await db.prepare(dataSql).all(...params, limit, offset);
 
     res.json({
       data: items,

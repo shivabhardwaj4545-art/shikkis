@@ -1,6 +1,6 @@
 import { Router } from 'express';
-
 import db from '../db/client.js';
+import { seedFullDatabase } from '../db/seedFull.js';
 
 const router = Router();
 
@@ -10,19 +10,29 @@ const router = Router();
  * Returns 200 with store info and DB status.
  * Used by load balancers and monitoring tools.
  */
-import { seedFullDatabase } from '../db/seedFull.js';
+router.get('/', async (_req, res) => {
+  let dbStatus = 'connected';
+  let productCount = 0;
+  let userCount = 0;
 
-router.get('/', (_req, res) => {
-  const dbStatus = db.open ? 'connected' : 'disconnected';
-  let productCount = (db.prepare('SELECT COUNT(*) as cnt FROM products').get() as any)?.cnt || 0;
-  let userCount = (db.prepare('SELECT COUNT(*) as cnt FROM users').get() as any)?.cnt || 0;
+  try {
+    const prodRes = await db.queryOne<{ cnt: string | number }>('SELECT COUNT(*) as cnt FROM products');
+    const userRes = await db.queryOne<{ cnt: string | number }>('SELECT COUNT(*) as cnt FROM users');
+    productCount = Number(prodRes?.cnt ?? 0);
+    userCount = Number(userRes?.cnt ?? 0);
+  } catch (err) {
+    dbStatus = 'error';
+    console.error('Database query error in health check:', err);
+  }
 
-  if (productCount === 0 || userCount === 0) {
+  if (dbStatus === 'connected' && (productCount === 0 || userCount === 0)) {
     try {
       console.log('🌱 Health check detected 0 products/users. Running seedFullDatabase...');
-      seedFullDatabase(db);
-      productCount = (db.prepare('SELECT COUNT(*) as cnt FROM products').get() as any)?.cnt || 0;
-      userCount = (db.prepare('SELECT COUNT(*) as cnt FROM users').get() as any)?.cnt || 0;
+      await seedFullDatabase(db);
+      const prodRes = await db.queryOne<{ cnt: string | number }>('SELECT COUNT(*) as cnt FROM products');
+      const userRes = await db.queryOne<{ cnt: string | number }>('SELECT COUNT(*) as cnt FROM users');
+      productCount = Number(prodRes?.cnt ?? 0);
+      userCount = Number(userRes?.cnt ?? 0);
     } catch (err) {
       console.error('Auto-seed error in health check:', err);
     }
@@ -39,12 +49,17 @@ router.get('/', (_req, res) => {
   });
 });
 
-router.get('/seed', (_req, res) => {
+router.get('/seed', async (_req, res) => {
   try {
-    seedFullDatabase(db);
-    const productCount = (db.prepare('SELECT COUNT(*) as cnt FROM products').get() as any)?.cnt || 0;
-    const userCount = (db.prepare('SELECT COUNT(*) as cnt FROM users').get() as any)?.cnt || 0;
-    res.json({ status: 'ok', message: 'Full database seeded successfully', products: productCount, users: userCount });
+    await seedFullDatabase(db);
+    const prodRes = await db.queryOne<{ cnt: string | number }>('SELECT COUNT(*) as cnt FROM products');
+    const userRes = await db.queryOne<{ cnt: string | number }>('SELECT COUNT(*) as cnt FROM users');
+    res.json({
+      status: 'ok',
+      message: 'Full database seeded successfully',
+      products: Number(prodRes?.cnt ?? 0),
+      users: Number(userRes?.cnt ?? 0),
+    });
   } catch (err: any) {
     res.status(500).json({ status: 'error', error: err.message });
   }

@@ -6,11 +6,12 @@ import app from '../index.js';
 import { generateAccessToken } from '../middleware/auth.js';
 
 describe('Admin Orders, CRM & Reports API Tests', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     const db = getDb();
-    db.prepare("UPDATE orders SET order_status = 'placed', payment_status = 'paid' WHERE id = 'ord_006'").run();
-    db.prepare("UPDATE orders SET order_status = 'delivered', payment_status = 'paid' WHERE id = 'ord_001'").run();
+    await db.prepare("UPDATE orders SET order_status = 'placed', payment_status = 'paid' WHERE id = 'ord_006'").run();
+    await db.prepare("UPDATE orders SET order_status = 'delivered', payment_status = 'paid' WHERE id = 'ord_001'").run();
   });
+
 
   const ownerToken = generateAccessToken({
     sub: 'usr_owner_01',

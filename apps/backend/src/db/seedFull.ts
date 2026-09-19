@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
 
-export function seedFullDatabase(db: any) {
+export async function seedFullDatabase(db: any) {
   console.log('🌱 Starting Shikkis database seeder...');
 
 // Clean existing data
@@ -25,7 +25,7 @@ const tablesToClean = [
 
 for (const table of tablesToClean) {
   try {
-    db.prepare(`DELETE FROM ${table}`).run();
+    await db.prepare(`DELETE FROM ${table}`).run();
   } catch (err) {
     // Ignore table missing errors
   }
@@ -56,7 +56,7 @@ const insertAddress = db.prepare(`
 `);
 
 const ownerId = 'usr_owner_01';
-insertUser.run({
+await insertUser.run({
   id: ownerId,
   email: 'owner@shikkis.com',
   password_hash: ownerHash,
@@ -140,7 +140,7 @@ const customers = [
 ];
 
 for (const c of customers) {
-  insertUser.run({
+  await insertUser.run({
     id: c.id,
     email: c.email,
     password_hash: customerHash,
@@ -151,7 +151,7 @@ for (const c of customers) {
     is_active: 1,
   });
 
-  insertProfile.run({
+  await insertProfile.run({
     id: `prof_${c.id}`,
     user_id: c.id,
     date_of_birth: c.dob,
@@ -160,7 +160,7 @@ for (const c of customers) {
     last_order_date: c.last_order,
   });
 
-  insertAddress.run({
+  await insertAddress.run({
     id: c.address.id,
     user_id: c.id,
     label: c.address.label,
@@ -174,6 +174,7 @@ for (const c of customers) {
     is_default: c.address.is_default,
   });
 }
+
 
 console.log('âœ… Users, profiles, and addresses seeded.');
 
@@ -235,7 +236,7 @@ const insertCategory = db.prepare(`
 `);
 
 for (const cat of categories) {
-  insertCategory.run(cat);
+  await insertCategory.run(cat);
 }
 
 console.log('âœ… 6 Categories seeded.');
@@ -260,14 +261,14 @@ const farFutureDate = new Date(now.getTime() + 180 * 86400000).toISOString();
 const expiredDate = new Date(now.getTime() - 5 * 86400000).toISOString();
 
 // 1. Running 10% auto-applied discount (or code SHIKKIS10)
-insertOffer.run({
+await insertOffer.run({
   id: 'ofr_festive_10',
   name: 'Curated Heritage 10% Off',
   code: null, // null means auto-applied across the catalog!
   type: 'percent',
   value: 10,
-  max_discount: 500000, // â‚¹5,000 max discount in paise
-  min_cart_value: 199900, // â‚¹1,999 minimum order
+  max_discount: 500000, // ₹5,000 max discount in paise
+  min_cart_value: 199900, // ₹1,999 minimum order
   starts_at: pastDate,
   ends_at: futureDate,
   is_active: 1,
@@ -283,14 +284,14 @@ insertOffer.run({
 });
 
 // 2. Scheduled Diwali / Festival offer with banner
-insertOffer.run({
+await insertOffer.run({
   id: 'ofr_diwali_grand',
-  name: 'Royal Celebrations Flat â‚¹2,000 Off',
+  name: 'Royal Celebrations Flat ₹2,000 Off',
   code: 'ROYAL2000',
   type: 'flat',
-  value: 200000, // â‚¹2,000 in paise
+  value: 200000, // ₹2,000 in paise
   max_discount: 200000,
-  min_cart_value: 999900, // â‚¹9,999 minimum
+  min_cart_value: 999900, // ₹9,999 minimum
   starts_at: now.toISOString(),
   ends_at: farFutureDate,
   is_active: 1,
@@ -306,7 +307,7 @@ insertOffer.run({
 });
 
 // 3. Expired Offer
-insertOffer.run({
+await insertOffer.run({
   id: 'ofr_newyear_expired',
   name: 'Early Bird Winter Sale',
   code: 'WINTER15',
@@ -328,9 +329,9 @@ insertOffer.run({
   created_by: ownerId,
 });
 
-console.log('âœ… 3 Offers seeded (1 running, 1 festival scheduled, 1 expired).');
+console.log('✅ 3 Offers seeded (1 running, 1 festival scheduled, 1 expired).');
 
-// â”€â”€ Banners for Home Hero Carousel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Banners for Home Hero Carousel ──────────────────────────────────────────
 const insertBanner = db.prepare(`
   INSERT INTO banners (id, title, subtitle, image_url, cta_text, cta_link, display_order, starts_at, ends_at, is_active, created_by)
   VALUES (@id, @title, @subtitle, @image_url, @cta_text, @cta_link, @display_order, @starts_at, @ends_at, 1, @created_by)
@@ -367,13 +368,14 @@ const banners = [
 ];
 
 for (const b of banners) {
-  insertBanner.run({
+  await insertBanner.run({
     ...b,
     starts_at: pastDate,
     ends_at: farFutureDate,
     created_by: ownerId,
   });
 }
+
 
 console.log('âœ… 3 Hero Banners seeded.');
 
@@ -404,76 +406,70 @@ const productsData = [
   {
     id: 'prd_01',
     category_id: 'cat_sarees',
-    name: 'Crimson Vermilion Katan Silk Banarasi Saree',
-    slug: 'crimson-katan-silk-banarasi-saree',
-    description: 'Exquisite pure Katan silk drape featuring dense gold zari jaal and floral border motifs.',
-    long_description: 'Woven over 24 days by master artisans in Varanasi, this crimson heirloom saree celebrates centuries of bridal artistry with fine zari brocade and contrast unstitched blouse piece.',
-    fabric: 'Pure Katan Silk',
-    occasion: 'Bridal & Festive',
+    name: 'Champagne Floral Corset Pre-Draped Saree',
+    slug: 'champagne-drape-saree',
+    description: 'Pre-stitched champagne beige drape saree with floral threadwork embroidered corset bodice and sculpted pleats.',
+    long_description: 'An elegant contemporary saree drape highlighting a sculpted corset bodice with delicate pastel floral embroidery.',
+    fabric: 'Tissue Silk & Satin',
+    occasion: 'Cocktail & Party, Weddings',
     gender: 'women',
-    care_instructions: 'Strictly dry clean only. Store in breathable muslin bag.',
-    mrp: 2899900, // â‚¹28,999 in paise
-    discount_percent: 15,
+    care_instructions: 'Strictly dry clean only.',
+    mrp: 2899900,
+    discount_percent: 10,
     sku: 'SHK-SAR-001',
     is_featured: 1,
     images: [
-      'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=900&q=80',
-      'https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&w=900&q=80',
+      '/images/products/champagne-drape-saree.jpg',
     ],
     variants: [
-      { size: 'FREE_SIZE', color: 'Crimson Red', stock: 8, override: null },
-      { size: 'FREE_SIZE', color: 'Royal Burgundy', stock: 3, override: null },
-      { size: 'FREE_SIZE', color: 'Emerald Green', stock: 0, override: null }, // Out of stock test
+      { size: 'FREE_SIZE', color: 'Champagne Gold', stock: 8, override: null },
+      { size: 'FREE_SIZE', color: 'Blush Cream', stock: 3, override: null },
     ],
   },
   {
     id: 'prd_02',
     category_id: 'cat_sarees',
-    name: 'Mustard Gold Handwoven Kanjivaram Silk Saree',
-    slug: 'mustard-gold-kanjivaram-silk-saree',
-    description: 'Lustrous mulberry silk with heavy temple borders and contrast magenta pallu.',
-    long_description: 'An auspicious drape woven in Kanchipuram using pure silver electroplated in 24k gold zari, highlighting traditional mayil (peacock) motifs along the ornate korvai border.',
-    fabric: 'Pure Mulberry Silk',
-    occasion: 'Weddings',
+    name: 'Bronze Metallic Embellished Pre-Draped Saree Gown',
+    slug: 'metallic-bronze-saree-gown',
+    description: 'Statement metallic bronze pre-draped saree gown featuring an embellished asymmetrical corset blouse and flowing pallu.',
+    long_description: 'High fashion pre-draped saree gown featuring hand-embellished sequins along the metallic metallic drape.',
+    fabric: 'Metallic Satin Silk & Sequin Mesh',
+    occasion: 'Weddings, Reception',
     gender: 'women',
-    care_instructions: 'Dry clean only. Roll fold to protect zari integrity.',
-    mrp: 3450000, // â‚¹34,500
-    discount_percent: 10,
+    care_instructions: 'Dry clean only.',
+    mrp: 3249900,
+    discount_percent: 15,
     sku: 'SHK-SAR-002',
     is_featured: 1,
     images: [
-      'https://images.unsplash.com/photo-1609357605129-26f69add5d6e?auto=format&fit=crop&w=900&q=80',
-      'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=900&q=80',
+      '/images/products/metallic-saree-gown.jpg',
     ],
     variants: [
-      { size: 'FREE_SIZE', color: 'Mustard Gold', stock: 6, override: null },
-      { size: 'FREE_SIZE', color: 'Magenta Pink', stock: 4, override: null },
-      { size: 'FREE_SIZE', color: 'Deep Teal', stock: 2, override: null },
+      { size: 'FREE_SIZE', color: 'Bronze Gold', stock: 6, override: null },
+      { size: 'FREE_SIZE', color: 'Gunmetal Silver', stock: 4, override: null },
     ],
   },
   {
     id: 'prd_03',
     category_id: 'cat_sarees',
-    name: 'Pastel Sage Organza Saree with Cutwork Border',
-    slug: 'pastel-sage-organza-saree',
-    description: 'Featherlight silk organza drape adorned with delicate scalloped cutwork and pearl embroidery.',
-    long_description: 'Modern luxury meets feminine romance in this pastel drape, ideal for sundowner cocktails and intimate mehendi celebrations. Comes with an embroidered silk blouse piece.',
-    fabric: 'Silk Organza',
-    occasion: 'Cocktail & Party',
+    name: 'Deep Emerald Teal Halter Corset Draped Saree',
+    slug: 'emerald-halter-corset-saree',
+    description: 'Fluid emerald teal drape saree featuring a halter-neck sequined corset blouse and sculpted pleats.',
+    long_description: 'Modern luxury meets festive glamour in this deep teal draped saree paired with a shimmering halter-neck bustier.',
+    fabric: 'Fluid Satin Silk & Sequin Bustier',
+    occasion: 'Cocktail & Party, Reception',
     gender: 'women',
-    care_instructions: 'Gentle dry clean only. Do not machine press.',
-    mrp: 1849900,
-    discount_percent: 20,
+    care_instructions: 'Gentle dry clean only.',
+    mrp: 2699900,
+    discount_percent: 15,
     sku: 'SHK-SAR-003',
-    is_featured: 0,
+    is_featured: 1,
     images: [
-      'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=900&q=80',
-      'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=900&q=80',
+      '/images/products/emerald-halter-saree.jpg',
     ],
     variants: [
-      { size: 'FREE_SIZE', color: 'Sage Green', stock: 12, override: null },
-      { size: 'FREE_SIZE', color: 'Dusty Rose', stock: 5, override: null },
-      { size: 'FREE_SIZE', color: 'Lavender Mist', stock: 4, override: null },
+      { size: 'FREE_SIZE', color: 'Emerald Teal', stock: 12, override: null },
+      { size: 'FREE_SIZE', color: 'Bottle Green', stock: 5, override: null },
     ],
   },
   {
@@ -553,79 +549,74 @@ const productsData = [
   {
     id: 'prd_07',
     category_id: 'cat_salwar_suits',
-    name: 'Maroon Zardozi Velvet Anarkali Suit Set',
-    slug: 'maroon-zardozi-velvet-anarkali',
-    description: 'Plush micro-velvet floor-length Anarkali adorned with copper dabka, zardozi and tissue dupatta.',
-    long_description: 'Crafted for winter weddings and regal receptions, this three-piece suit combines rich jewel-toned velvet with a gossamer organza dupatta.',
-    fabric: 'Silk Velvet & Organza',
-    occasion: 'Weddings & Bridal',
+    name: 'Blush Peach Embellished Cape & Palazzo Set',
+    slug: 'blush-peach-cape-set',
+    description: 'Elegantly hand-embroidered blush peach corset bustier paired with wide pleated palazzo and flowing floor-length cape jacket.',
+    long_description: 'An elegant ensemble combining a floral hand-embroidered corset bustier with a flowing floor-length cape jacket and wide pleated flared palazzo pants.',
+    fabric: 'Pure Georgette & Organza',
+    occasion: 'Cocktail & Party, Festive',
     gender: 'women',
-    care_instructions: 'Dry clean only. Steam iron from reverse side.',
-    mrp: 3200000,
+    care_instructions: 'Dry clean only.',
+    mrp: 2499900,
     discount_percent: 15,
     sku: 'SHK-SLW-001',
     is_featured: 1,
     images: [
-      'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=900&q=80',
-      'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?auto=format&fit=crop&w=900&q=80',
+      '/images/products/peach-cape-set.jpg',
     ],
     variants: [
-      { size: 'S', color: 'Deep Maroon', stock: 4, override: null },
-      { size: 'M', color: 'Deep Maroon', stock: 7, override: null },
-      { size: 'L', color: 'Deep Maroon', stock: 5, override: null },
-      { size: 'XL', color: 'Deep Maroon', stock: 0, override: null },
+      { size: 'S', color: 'Blush Peach', stock: 4, override: null },
+      { size: 'M', color: 'Blush Peach', stock: 7, override: null },
+      { size: 'L', color: 'Blush Peach', stock: 5, override: null },
     ],
   },
   {
     id: 'prd_08',
     category_id: 'cat_salwar_suits',
-    name: 'Ivory Chanderi Straight Kurta & Palazzo Set',
-    slug: 'ivory-chanderi-straight-kurta-palazzo',
-    description: 'Lightweight Chanderi silk tunic paired with wide-leg culotte trousers and a printed Kota doria dupatta.',
-    long_description: 'Subtle elegance featuring fine pita work around the neckline and delicate thread embroidery along the hemline.',
-    fabric: 'Chanderi Silk & Cotton Mulmul',
-    occasion: 'Festive & Daytime',
+    name: 'Olive Gold Embroidered Vest & Sequin Flared Co-Ord Set',
+    slug: 'olive-sequin-co-ord-set',
+    description: 'Gold sequin flared bell-bottom pants paired with a metallic crop bustier, cut-out embroidered vest, and matching embroidered potli bag.',
+    long_description: 'A dazzling festive ensemble featuring shimmering metallic co-ord trousers, an ornate cut-out vest jacket, and a matching embroidered potli bag.',
+    fabric: 'Sequin Georgette & Velvet Vest',
+    occasion: 'Cocktail & Party, Sangeet & Mehendi',
     gender: 'women',
     care_instructions: 'Gentle dry clean recommended.',
-    mrp: 1299900,
-    discount_percent: 10,
+    mrp: 2299900,
+    discount_percent: 12,
     sku: 'SHK-SLW-002',
-    is_featured: 0,
+    is_featured: 1,
     images: [
-      'https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?auto=format&fit=crop&w=900&q=80',
-      'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=900&q=80',
+      '/images/products/olive-sequin-co-ord.jpg',
     ],
     variants: [
-      { size: 'S', color: 'Ivory Gold', stock: 8, override: null },
-      { size: 'M', color: 'Ivory Gold', stock: 12, override: null },
-      { size: 'L', color: 'Ivory Gold', stock: 6, override: null },
-      { size: 'XL', color: 'Ivory Gold', stock: 4, override: null },
+      { size: 'S', color: 'Olive Gold', stock: 8, override: null },
+      { size: 'M', color: 'Olive Gold', stock: 12, override: null },
+      { size: 'L', color: 'Olive Gold', stock: 6, override: null },
     ],
   },
   {
     id: 'prd_09',
     category_id: 'cat_salwar_suits',
-    name: 'Teal Green Georgette Sharara Set with Mirror Work',
-    slug: 'teal-green-georgette-sharara-set',
-    description: 'Flowy georgette peplum kurta paired with flared tiered sharara and real glass mirror work.',
-    long_description: 'Vibrant and energetic, this sangeet favorite features handcrafted mirror embroidery and a ruffled scalloped net dupatta.',
-    fabric: 'Pure Viscose Georgette',
-    occasion: 'Sangeet & Mehendi',
+    name: 'Tangerine Orange Embroidered Crop Top & Flared Palazzo Set',
+    slug: 'tangerine-orange-palazzo-set',
+    description: 'Vibrant tangerine orange embroidered crop top with high-waist flared palazzo pants and sheer dupatta drape.',
+    long_description: 'An eye-catching festive co-ord set featuring a heavy zardozi embroidered crop top, wide-leg palazzo trousers, and matching scarf.',
+    fabric: 'Pure Georgette & Zardozi Threadwork',
+    occasion: 'Haldi, Sangeet & Mehendi',
     gender: 'women',
     care_instructions: 'Strictly dry clean.',
-    mrp: 1850000,
-    discount_percent: 25,
+    mrp: 1999900,
+    discount_percent: 15,
     sku: 'SHK-SLW-003',
     is_featured: 1,
     images: [
-      'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?auto=format&fit=crop&w=900&q=80',
-      'https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?auto=format&fit=crop&w=900&q=80',
+      '/images/products/tangerine-palazzo-set.jpg',
     ],
     variants: [
-      { size: 'XS', color: 'Teal Green', stock: 3, override: null },
-      { size: 'S', color: 'Teal Green', stock: 6, override: null },
-      { size: 'M', color: 'Teal Green', stock: 9, override: null },
-      { size: 'L', color: 'Teal Green', stock: 4, override: null },
+      { size: 'XS', color: 'Tangerine Orange', stock: 3, override: null },
+      { size: 'S', color: 'Tangerine Orange', stock: 6, override: null },
+      { size: 'M', color: 'Tangerine Orange', stock: 9, override: null },
+      { size: 'L', color: 'Tangerine Orange', stock: 4, override: null },
     ],
   },
   {
@@ -709,76 +700,73 @@ const productsData = [
   {
     id: 'prd_13',
     category_id: 'cat_lehengas',
-    name: 'Royal Heritage Scarlet Red Bridal Lehenga',
-    slug: 'scarlet-red-bridal-lehenga',
-    description: 'Handcrafted bridal lehenga with comprehensive zardozi, beaten gold bullion, and resham floral motifs.',
-    long_description: 'An iconic bridal masterpiece crafted over 350 artisan hours. Features a heavy kalidar skirt, sweetheart neckline blouse, and dual dupattas (organza head veil + silk shoulder drape).',
-    fabric: 'Silk Velvet & Heritage Brocade',
-    occasion: 'Bridal',
+    name: 'Royal Wine Sequin Mermaid Gown with Cape',
+    slug: 'wine-sequin-cape-gown',
+    description: 'Deep wine purple flared mermaid gown with delicate grid cape, sweetheart corset neckline, and all-over metallic sequin embroidery.',
+    long_description: 'A showstopping evening ensemble detailed with intricate sequin lattice work, a corseted bodice, and an ethereal sheer cape.',
+    fabric: 'Net Tulle & Sequins',
+    occasion: 'Sangeet & Mehendi, Cocktail',
     gender: 'women',
-    care_instructions: 'Professional bridal dry cleaning only. Stored in trunk.',
-    mrp: 8500000, // â‚¹85,000 in paise
-    discount_percent: 10,
+    care_instructions: 'Specialist dry clean only.',
+    mrp: 3499900,
+    discount_percent: 20,
     sku: 'SHK-LHG-001',
     is_featured: 1,
     images: [
-      'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?auto=format&fit=crop&w=900&q=80',
-      'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=900&q=80',
+      '/images/products/wine-embellished-gown.jpg',
     ],
     variants: [
-      { size: 'S', color: 'Scarlet Red', stock: 2, override: null },
-      { size: 'M', color: 'Scarlet Red', stock: 3, override: null },
-      { size: 'L', color: 'Scarlet Red', stock: 1, override: null },
+      { size: 'S', color: 'Royal Wine', stock: 2, override: null },
+      { size: 'M', color: 'Royal Wine', stock: 3, override: null },
+      { size: 'L', color: 'Royal Wine', stock: 1, override: null },
     ],
   },
   {
     id: 'prd_14',
     category_id: 'cat_lehengas',
-    name: 'Blush Champagne Sequin & Crystal Net Lehenga',
-    slug: 'blush-champagne-sequin-crystal-lehenga',
-    description: 'Contemporary cocktail lehenga drenched in hand-cut geometric sequins and Swarovski crystal accents.',
-    long_description: 'Offers dazzling shimmer under chandeliers. Styled with an off-shoulder corseted blouse and cascading tulle dupatta.',
-    fabric: 'French Tulle & Raw Silk Lining',
-    occasion: 'Reception & Cocktail',
+    name: 'Rani Pink Zardozi Hand-Embroidered Bridal Lehenga',
+    slug: 'rani-pink-bridal-lehenga',
+    description: 'Majestic rani pink / magenta bridal lehenga choli hand-crafted with zardozi, resham threadwork, and scalloped border dupatta.',
+    long_description: 'Heirloom bridal couture in vibrant rani pink featuring handcrafted zardozi embroidery across the expansive flared kalis.',
+    fabric: 'Raw Silk & Fine Net',
+    occasion: 'Bridal & Festive, Weddings',
     gender: 'women',
     care_instructions: 'Specialist dry clean only.',
-    mrp: 6200000,
-    discount_percent: 15,
+    mrp: 5499900,
+    discount_percent: 10,
     sku: 'SHK-LHG-002',
     is_featured: 1,
     images: [
-      'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=900&q=80',
-      'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?auto=format&fit=crop&w=900&q=80',
+      '/images/products/magenta-bridal-lehenga.jpg',
     ],
     variants: [
-      { size: 'XS', color: 'Champagne Gold', stock: 2, override: null },
-      { size: 'S', color: 'Champagne Gold', stock: 4, override: null },
-      { size: 'M', color: 'Champagne Gold', stock: 3, override: null },
+      { size: 'XS', color: 'Rani Pink', stock: 2, override: null },
+      { size: 'S', color: 'Rani Pink', stock: 4, override: null },
+      { size: 'M', color: 'Rani Pink', stock: 3, override: null },
     ],
   },
   {
     id: 'prd_15',
     category_id: 'cat_lehengas',
-    name: 'Emerald Green Floral Embroidered Silk Lehenga',
-    slug: 'emerald-green-floral-silk-lehenga',
-    description: 'Deep forest green pure silk lehenga embroidered with multi-colored resham blooms and zari cords.',
-    long_description: 'An enchanting palette celebrating nature with rich green tones, paired with a hand-woven tissue gold dupatta.',
-    fabric: 'Pure Matka Silk',
-    occasion: 'Sangeet & Festive',
+    name: 'Dusty Rose Mirror-Work & Cutdana Bridal Lehenga',
+    slug: 'dusty-rose-mirror-lehenga',
+    description: 'Blush pink / dusty rose flared net lehenga drenched in genuine Kutch mirror-work and cutdana sequins.',
+    long_description: 'An ethereal dusty rose lehenga with intricate mirror kalis, ornate choker-style neckline blouse, and sheer net dupatta.',
+    fabric: 'Fine Net Tulle & Mirror Work',
+    occasion: 'Weddings, Sangeet & Mehendi',
     gender: 'women',
     care_instructions: 'Dry clean only.',
-    mrp: 4800000,
-    discount_percent: 12,
+    mrp: 4899900,
+    discount_percent: 10,
     sku: 'SHK-LHG-003',
-    is_featured: 0,
+    is_featured: 1,
     images: [
-      'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=900&q=80',
-      'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?auto=format&fit=crop&w=900&q=80',
+      '/images/products/dusty-rose-mirror-lehenga.jpg',
     ],
     variants: [
-      { size: 'S', color: 'Emerald Green', stock: 3, override: null },
-      { size: 'M', color: 'Emerald Green', stock: 5, override: null },
-      { size: 'L', color: 'Emerald Green', stock: 2, override: null },
+      { size: 'S', color: 'Dusty Rose', stock: 3, override: null },
+      { size: 'M', color: 'Dusty Rose', stock: 5, override: null },
+      { size: 'L', color: 'Dusty Rose', stock: 2, override: null },
     ],
   },
   {
@@ -1038,136 +1026,131 @@ const productsData = [
   {
     id: 'prd_26',
     category_id: 'cat_mens_ethnic',
-    name: 'Ivory Raw Silk Sherwani with Antique Zari Work',
-    slug: 'ivory-raw-silk-groom-sherwani',
-    description: 'Regal groom sherwani in pure handloom raw silk embroidered with micro-dabka and tone-on-tone motifs.',
-    long_description: 'Tailored for royal nuptials, complete with structured padded shoulders, concealed placket, jewel-encrusted buttons, and churidar trousers.',
-    fabric: 'Pure Mulberry Raw Silk',
-    occasion: 'Groom & Wedding',
+    name: 'Pastel Mint & Emerald Hand-Embroidered Kurta Set',
+    slug: 'mens-festive-kurta-set',
+    description: 'Designer men’s festive trio featuring a sky-blue mirror-work kurta, olive draped wrap suit, and emerald green palm jacket kurta.',
+    long_description: 'Vibrant celebratory menswear featuring pastel mint silk embroidered kurtas, statement lapel jackets, and tailored trousers.',
+    fabric: 'Chanderi Silk & Raw Silk',
+    occasion: 'Weddings, Sangeet & Mehendi',
     gender: 'men',
     care_instructions: 'Strictly professional dry clean only.',
-    mrp: 5499900, // â‚¹54,999
-    discount_percent: 10,
+    mrp: 2799900,
+    discount_percent: 15,
     sku: 'SHK-MEN-001',
     is_featured: 1,
     images: [
-      'https://images.unsplash.com/photo-1617137984095-74e4e5e3613f?auto=format&fit=crop&w=900&q=80',
-      'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?auto=format&fit=crop&w=900&q=80',
+      '/images/products/mens-festive-trio.jpg',
     ],
     variants: [
-      { size: 'M', color: 'Ivory Gold', stock: 3, override: null },
-      { size: 'L', color: 'Ivory Gold', stock: 4, override: null },
-      { size: 'XL', color: 'Ivory Gold', stock: 2, override: null },
-      { size: 'XXL', color: 'Ivory Gold', stock: 0, override: null },
+      { size: 'M', color: 'Pastel Mint', stock: 3, override: null },
+      { size: 'L', color: 'Emerald Green', stock: 4, override: null },
+      { size: 'XL', color: 'Olive Yellow', stock: 2, override: null },
     ],
   },
   {
     id: 'prd_27',
     category_id: 'cat_mens_ethnic',
-    name: 'Midnight Navy Velvet Bandhgala Jodhpuri Suit',
-    slug: 'midnight-navy-velvet-bandhgala',
-    description: 'Sleek tailored royal Jodhpuri jacket crafted in Italian velvet with handcrafted metal crest buttons.',
-    long_description: 'The epitome of bespoke elegance for receptions and black-tie Indian celebrations. Paired with tailored off-white trousers.',
-    fabric: 'Micro Velvet & Satin Lining',
-    occasion: 'Reception & Formal',
+    name: 'Royal Ivory & Sage Embroidered Sherwani & Bandhgala Set',
+    slug: 'mens-shadi-fits-sherwani',
+    description: 'Bespoke groom and wedding fits featuring ivory chikankari tunics, sage embroidered bundi jackets, and royal open bandhgalas.',
+    long_description: 'Part of the signature Shadi Fits collection, showcasing hand-embroidered raw silk sherwanis and tailored Jodhpuri jackets.',
+    fabric: 'Pure Raw Silk & Zari Threads',
+    occasion: 'Bridal & Festive, Weddings',
     gender: 'men',
     care_instructions: 'Dry clean only. Steam press.',
-    mrp: 3899900,
-    discount_percent: 15,
+    mrp: 4299900,
+    discount_percent: 10,
     sku: 'SHK-MEN-002',
     is_featured: 1,
     images: [
-      'https://images.unsplash.com/photo-1617137984095-74e4e5e3613f?auto=format&fit=crop&w=900&q=80',
-      'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=900&q=80',
+      '/images/products/mens-shadi-fits.jpg',
     ],
     variants: [
-      { size: 'S', color: 'Midnight Navy', stock: 4, override: null },
-      { size: 'M', color: 'Midnight Navy', stock: 7, override: null },
-      { size: 'L', color: 'Midnight Navy', stock: 5, override: null },
-      { size: 'XL', color: 'Midnight Navy', stock: 3, override: null },
+      { size: 'S', color: 'Royal Ivory', stock: 4, override: null },
+      { size: 'M', color: 'Royal Ivory', stock: 7, override: null },
+      { size: 'L', color: 'Sage Embroidered', stock: 5, override: null },
+      { size: 'XL', color: 'Cream Gold', stock: 3, override: null },
     ],
   },
   {
     id: 'prd_28',
     category_id: 'cat_mens_ethnic',
-    name: 'Mustard Chanderi Kurta-Churidar Set with Bundi Vest',
-    slug: 'mustard-chanderi-kurta-bundi-set',
-    description: 'Festive three-piece ensemble featuring silk Chanderi kurta, churidar and printed floral Nehru jacket.',
-    long_description: 'Comfortable and spirited, perfect for Haldi ceremonies and festive pujas.',
-    fabric: 'Silk Chanderi & Cotton Silk',
-    occasion: 'Festive & Haldi',
+    name: 'Heritage Refined Mauve & Navy Bandhgala Duo',
+    slug: 'heritage-refined-mauve-navy-bandhgala',
+    description: 'Bespoke men’s Heritage Refined bandhgala suits in dusty mauve silk and textured midnight navy embroidered velvet.',
+    long_description: 'An iconic dual ensemble featuring tailored mandarin-neck jackets, subtle tonal thread embroidery, and fitted trousers.',
+    fabric: 'Italian Wool & Pure Silk',
+    occasion: 'Weddings, Reception & Formal',
     gender: 'men',
     care_instructions: 'Dry clean only.',
-    mrp: 1850000,
-    discount_percent: 20,
+    mrp: 3899900,
+    discount_percent: 10,
     sku: 'SHK-MEN-003',
-    is_featured: 0,
+    is_featured: 1,
     images: [
-      'https://images.unsplash.com/photo-1617137984095-74e4e5e3613f?auto=format&fit=crop&w=900&q=80',
-      'https://images.unsplash.com/photo-1609357605129-26f69add5d6e?auto=format&fit=crop&w=900&q=80',
+      '/images/products/heritage-refined-mens.jpg',
     ],
     variants: [
-      { size: 'S', color: 'Mustard Ochre', stock: 6, override: null },
-      { size: 'M', color: 'Mustard Ochre', stock: 9, override: null },
-      { size: 'L', color: 'Mustard Ochre', stock: 8, override: null },
-      { size: 'XL', color: 'Mustard Ochre', stock: 4, override: null },
+      { size: 'S', color: 'Dusty Mauve', stock: 6, override: null },
+      { size: 'M', color: 'Dusty Mauve', stock: 9, override: null },
+      { size: 'L', color: 'Midnight Navy', stock: 8, override: null },
+      { size: 'XL', color: 'Midnight Navy', stock: 4, override: null },
     ],
   },
   {
     id: 'prd_29',
     category_id: 'cat_mens_ethnic',
-    name: 'Deep Crimson Silk Kurta with Mirror Work Collar',
-    slug: 'deep-crimson-silk-kurta',
-    description: 'Straight-cut pure silk kurta with geometric threadwork and subtle mirror embroidery.',
-    long_description: 'Rich festive jewel tone that pairs effortlessly with white dhoti pants or tailored trousers.',
-    fabric: 'Pure Dupion Silk',
-    occasion: 'Sangeet & Diwali',
+    name: 'Royal Black Embroidered Sash Tuxedo Suit',
+    slug: 'royal-black-embroidered-sash-tuxedo',
+    description: 'Black double-breasted tuxedo suit featuring hand-embroidered shoulder branch motifs and a tied satin waist sash.',
+    long_description: 'High-fashion evening couture with a draped satin belt sash, satin shawl lapels, and exquisite hand-stitched floral branch work.',
+    fabric: 'Bespoke Satin & Embroidered Velvet',
+    occasion: 'Reception & Formal, Black-Tie',
     gender: 'men',
     care_instructions: 'Dry clean only.',
-    mrp: 1299900,
-    discount_percent: 0,
+    mrp: 4699900,
+    discount_percent: 12,
     sku: 'SHK-MEN-004',
-    is_featured: 0,
+    is_featured: 1,
     images: [
-      'https://images.unsplash.com/photo-1617137984095-74e4e5e3613f?auto=format&fit=crop&w=900&q=80',
-      'https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&w=900&q=80',
+      '/images/products/black-tuxedo-suit.jpg',
+      '/images/products/black-tuxedo-detail.jpg',
     ],
     variants: [
-      { size: 'M', color: 'Crimson Red', stock: 8, override: null },
-      { size: 'L', color: 'Crimson Red', stock: 11, override: null },
-      { size: 'XL', color: 'Crimson Red', stock: 5, override: null },
+      { size: 'M', color: 'Royal Black', stock: 8, override: null },
+      { size: 'L', color: 'Royal Black', stock: 11, override: null },
+      { size: 'XL', color: 'Royal Black', stock: 5, override: null },
     ],
   },
   {
     id: 'prd_30',
     category_id: 'cat_mens_ethnic',
-    name: 'Natural Beige Linen-Silk Kurta & Pajama Set',
-    slug: 'natural-beige-linen-silk-kurta',
-    description: 'Breathable organic linen-silk blend with fine pintucks and relaxed straight trousers.',
-    long_description: 'Effortless understated sophistication for daytime rituals and intimate gatherings.',
-    fabric: 'Linen Silk Blend',
-    occasion: 'Casual & Daytime',
+    name: 'Timeless Dusty Mauve Embroidered Bandhgala Suit',
+    slug: 'timeless-dusty-mauve-bandhgala',
+    description: 'Understated elegant dusty mauve bandhgala suit with vertical placket detailing and subtle leaf embroidery.',
+    long_description: 'Timeless elegance designed for daytime weddings and formal celebrations.',
+    fabric: 'Chanderi Silk & Resham Thread',
+    occasion: 'Weddings, Reception & Formal',
     gender: 'men',
     care_instructions: 'Hand wash in cold water or dry clean.',
-    mrp: 899900,
+    mrp: 3599900,
     discount_percent: 15,
     sku: 'SHK-MEN-005',
-    is_featured: 0,
+    is_featured: 1,
     images: [
-      'https://images.unsplash.com/photo-1617137984095-74e4e5e3613f?auto=format&fit=crop&w=900&q=80',
-      'https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?auto=format&fit=crop&w=900&q=80',
+      '/images/products/timeless-mauve-bandhgala.jpg',
     ],
     variants: [
-      { size: 'S', color: 'Natural Beige', stock: 8, override: null },
-      { size: 'M', color: 'Natural Beige', stock: 14, override: null },
-      { size: 'L', color: 'Natural Beige', stock: 9, override: null },
-      { size: 'XL', color: 'Natural Beige', stock: 5, override: null },
+      { size: 'S', color: 'Dusty Mauve', stock: 8, override: null },
+      { size: 'M', color: 'Dusty Mauve', stock: 14, override: null },
+      { size: 'L', color: 'Dusty Mauve', stock: 9, override: null },
+      { size: 'XL', color: 'Dusty Mauve', stock: 5, override: null },
     ],
   },
 ];
 
 for (const p of productsData) {
-  insertProduct.run({
+  await insertProduct.run({
     id: p.id,
     category_id: p.category_id,
     name: p.name,
@@ -1188,7 +1171,7 @@ for (const p of productsData) {
   for (let i = 0; i < p.variants.length; i++) {
     const v = p.variants[i];
     const varSku = `${p.sku}-${v.size}-${v.color.replace(/\s+/g, '').toUpperCase()}`;
-    insertVariant.run({
+    await insertVariant.run({
       id: `var_${p.id}_${i + 1}`,
       product_id: p.id,
       size: v.size,
@@ -1200,6 +1183,7 @@ for (const p of productsData) {
     });
   }
 }
+
 
 console.log('âœ… 30 Products and their Variants seeded.');
 
@@ -1489,7 +1473,7 @@ const sampleOrders = [
 ];
 
 for (const o of sampleOrders) {
-  insertOrder.run({
+  await insertOrder.run({
     id: o.id,
     order_number: o.order_number,
     user_id: o.user_id,
@@ -1511,7 +1495,7 @@ for (const o of sampleOrders) {
   });
 
   for (const itm of o.items) {
-    insertOrderItem.run({
+    await insertOrderItem.run({
       id: itm.id,
       order_id: o.id,
       variant_id: itm.variant_id,
@@ -1524,7 +1508,7 @@ for (const o of sampleOrders) {
     });
   }
 
-  insertStatusHistory.run({
+  await insertStatusHistory.run({
     id: `his_${o.id}`,
     order_id: o.id,
     status: o.order_status,
@@ -1532,6 +1516,7 @@ for (const o of sampleOrders) {
     changed_by: ownerId,
   });
 }
+
 
 console.log('âœ… 8 Sample Orders (covering all order_status, payment_status, & fulfillment_types) seeded.');
 console.log('ðŸŽ‰ Seeding successfully completed!');

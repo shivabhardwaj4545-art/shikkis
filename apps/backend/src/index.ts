@@ -35,8 +35,10 @@ const PORT = Number(process.env.PORT ?? 3001);
 const NODE_ENV = process.env.NODE_ENV ?? 'development';
 
 // ── Database ──────────────────────────────────────────────────────────────────
-// Run migrations/schema init synchronously before any requests are served
-initSchema();
+// Run migrations/schema init before any requests are served
+initSchema().catch((err) => {
+  console.error('❌ Failed to initialize database schema:', err);
+});
 
 app.use(
   helmet({
