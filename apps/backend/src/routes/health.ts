@@ -15,13 +15,16 @@ router.get('/', async (_req, res) => {
   let productCount = 0;
   let userCount = 0;
 
+  let dbError: string | null = null;
+
   try {
     const prodRes = await db.queryOne<{ cnt: string | number }>('SELECT COUNT(*) as cnt FROM products');
     const userRes = await db.queryOne<{ cnt: string | number }>('SELECT COUNT(*) as cnt FROM users');
     productCount = Number(prodRes?.cnt ?? 0);
     userCount = Number(userRes?.cnt ?? 0);
-  } catch (err) {
+  } catch (err: any) {
     dbStatus = 'error';
+    dbError = err?.message || String(err);
     console.error('Database query error in health check:', err);
   }
 
@@ -42,6 +45,7 @@ router.get('/', async (_req, res) => {
     status: 'ok',
     store: 'Shikkis — Curated Style',
     db: dbStatus,
+    dbError,
     products: productCount,
     users: userCount,
     timestamp: new Date().toISOString(),

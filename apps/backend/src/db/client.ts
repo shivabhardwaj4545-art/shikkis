@@ -9,17 +9,54 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 const { Pool } = pkg;
 
-const poolConfig: pkg.PoolConfig = process.env.DATABASE_URL
-  ? { connectionString: process.env.DATABASE_URL }
-  : {
-      host: process.env.PGHOST || 'localhost',
-      port: Number(process.env.PGPORT || 5432),
-      user: process.env.PGUSER || 'postgres',
-      password: process.env.PGPASSWORD || 'Shiva@123',
-      database: process.env.PGDATABASE || 'shikkis',
-    };
+const connectionString =
+  process.env.DATABASE_URL ||
+  process.env.DATABASE_PUBLIC_URL ||
+  process.env.DATABASE_PRIVATE_URL ||
+  process.env.POSTGRES_URL ||
+  process.env.PG_URL ||
+  process.env.PGURL;
+
+let poolConfig: pkg.PoolConfig;
+
+if (connectionString) {
+  const isLocalHost = connectionString.includes('localhost') || connectionString.includes('127.0.0.1');
+  const disableSsl = process.env.PGSSLMODE === 'disable' || process.env.PGSSL === 'false';
+
+  poolConfig = {
+    connectionString,
+    ssl: disableSsl || isLocalHost ? false : { rejectUnauthorized: false },
+  };
+} else {
+  const host =
+    process.env.PGHOST ||
+    process.env.POSTGRES_HOST ||
+    (process.env.NODE_ENV === 'production' ? 'postgres.railway.internal' : 'localhost');
+  const port = Number(process.env.PGPORT || process.env.POSTGRES_PORT || 5432);
+  const user = process.env.PGUSER || process.env.POSTGRES_USER || 'postgres';
+  const password = process.env.PGPASSWORD || process.env.POSTGRES_PASSWORD || 'Shiva@123';
+  const database = process.env.PGDATABASE || process.env.POSTGRES_DB || (process.env.NODE_ENV === 'production' ? 'railway' : 'shikkis');
+
+  const isLocalHost = host === 'localhost' || host === '127.0.0.1';
+  const disableSsl = process.env.PGSSLMODE === 'disable' || process.env.PGSSL === 'false';
+
+  poolConfig = {
+    host,
+    port,
+    user,
+    password,
+    database,
+    ssl: disableSsl || isLocalHost ? false : { rejectUnauthorized: false },
+  };
+}
+
+console.log(`🔌 Initializing PostgreSQL Pool [host/conn: ${connectionString ? 'DATABASE_URL' : poolConfig.host}:${poolConfig.port || 5432}, db: ${poolConfig.database || 'default'}]`);
 
 export const pool = new Pool(poolConfig);
+
+pool.on('error', (err) => {
+  console.error('⚠️ Unexpected PostgreSQL pool error:', err);
+});
 
 
 /**
