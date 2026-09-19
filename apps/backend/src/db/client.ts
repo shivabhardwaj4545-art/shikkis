@@ -1,6 +1,7 @@
 import pkg from 'pg';
+import Database from 'better-sqlite3';
 import dotenv from 'dotenv';
-
+import fs from 'fs';
 import path from 'path';
 
 dotenv.config();
@@ -26,6 +27,7 @@ if (connectionString) {
   poolConfig = {
     connectionString,
     ssl: disableSsl || isLocalHost ? false : { rejectUnauthorized: false },
+    connectionTimeoutMillis: 3000,
   };
 } else {
   const host =
@@ -47,6 +49,7 @@ if (connectionString) {
     password,
     database,
     ssl: disableSsl || isLocalHost ? false : { rejectUnauthorized: false },
+    connectionTimeoutMillis: 3000,
   };
 }
 
@@ -54,20 +57,56 @@ console.log(`🔌 Initializing PostgreSQL Pool [host/conn: ${connectionString ? 
 
 export const pool = new Pool(poolConfig);
 
+let sqliteDb: InstanceType<typeof Database> | null = null;
+let isUsingSqlite = false;
+
 pool.on('error', (err) => {
-  console.error('⚠️ Unexpected PostgreSQL pool error:', err);
+  console.error('⚠️ Unexpected PostgreSQL pool error:', err?.message || err);
 });
 
+function getSqliteInstance() {
+  if (!sqliteDb) {
+    const dataDir = path.resolve(process.cwd(), 'data');
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+    const dbPath = path.join(dataDir, 'shikkis.db');
+    sqliteDb = new Database(dbPath);
+    sqliteDb.pragma('journal_mode = WAL');
+    sqliteDb.pragma('foreign_keys = ON');
+    console.log(`📦 Fallback SQLite Database initialized at ${dbPath}`);
+  }
+  return sqliteDb;
+}
 
-/**
- * Parses SQL and parameters:
- * Handles both @named parameters with object input:
- *   SQL: "INSERT INTO users (id, email) VALUES (@id, @email)"
- *   Params: [{ id: '1', email: 'a@b.com' }]
- * and positional `?` parameters with array/args input:
- *   SQL: "SELECT * FROM users WHERE email = ?"
- *   Params: ['a@b.com']
- */
+function parseSqliteParams(sql: string, params: any[]): { text: string; values: any[] } {
+  let values = params;
+  let text = sql;
+
+  if (params.length === 1 && typeof params[0] === 'object' && params[0] !== null && !Array.isArray(params[0])) {
+    const obj = params[0];
+    const paramKeys: string[] = [];
+    text = sql.replace(/@([a-zA-Z0-9_]+)/g, (_, key) => {
+      paramKeys.push(key);
+      return '?';
+    });
+    values = paramKeys.map(k => (obj[k] !== undefined ? obj[k] : null));
+  } else {
+    text = sql.replace(/\$\d+/g, '?');
+    if (params.length === 1 && Array.isArray(params[0])) {
+      values = params[0];
+    }
+  }
+
+  // Convert PostgreSQL specific functions/syntax to SQLite equivalents
+  text = text.replace(/\bILIKE\b/gi, 'LIKE');
+  text = text.replace(/\bTIMESTAMPTZ\b/gi, 'TEXT');
+  text = text.replace(/\bBIGINT\b/gi, 'INTEGER');
+  text = text.replace(/CURRENT_TIMESTAMP/gi, "datetime('now')");
+
+  return { text, values };
+}
+
 export function parseSqlAndParams(sql: string, params: any[]): { text: string; values: any[] } {
   if (params.length === 1 && typeof params[0] === 'object' && params[0] !== null && !Array.isArray(params[0])) {
     const obj = params[0];
@@ -76,7 +115,6 @@ export function parseSqlAndParams(sql: string, params: any[]): { text: string; v
       paramKeys.push(key);
       return `$${paramKeys.length}`;
     });
-    // If SQL had @ parameters, construct value array from object
     if (paramKeys.length > 0) {
       const values = paramKeys.map((key) => (obj[key] !== undefined ? obj[key] : null));
       return { text, values };
@@ -102,11 +140,46 @@ export interface DbClient {
   };
 }
 
+function handleDbError(err: any): boolean {
+  const msg = err?.message || String(err);
+  const code = err?.code;
+  if (
+    code === 'ECONNREFUSED' ||
+    code === 'ETIMEDOUT' ||
+    code === 'ENOTFOUND' ||
+    code === '28P01' || // password failed
+    code === '3D000' || // database does not exist
+    msg.includes('Connection terminated') ||
+    msg.includes('connect') ||
+    msg.includes('connection')
+  ) {
+    if (!isUsingSqlite) {
+      console.warn(`⚠️ PostgreSQL connection unavailable (${msg}). Switching to SQLite fallback engine.`);
+      isUsingSqlite = true;
+    }
+    return true;
+  }
+  return false;
+}
+
 export const db: DbClient = {
   async query<T = any>(sql: string, ...params: any[]): Promise<T[]> {
-    const { text, values } = parseSqlAndParams(sql, params);
-    const res = await pool.query(text, values);
-    return res.rows as T[];
+    if (isUsingSqlite) {
+      const sDb = getSqliteInstance();
+      const { text, values } = parseSqliteParams(sql, params);
+      const stmt = sDb.prepare(text);
+      return stmt.all(...values) as T[];
+    }
+    try {
+      const { text, values } = parseSqlAndParams(sql, params);
+      const res = await pool.query(text, values);
+      return res.rows as T[];
+    } catch (err: any) {
+      if (handleDbError(err)) {
+        return this.query<T>(sql, ...params);
+      }
+      throw err;
+    }
   },
 
   async queryOne<T = any>(sql: string, ...params: any[]): Promise<T | null> {
@@ -115,16 +188,98 @@ export const db: DbClient = {
   },
 
   async execute(sql: string, ...params: any[]): Promise<{ rowCount: number }> {
-    const { text, values } = parseSqlAndParams(sql, params);
-    const res = await pool.query(text, values);
-    return { rowCount: res.rowCount ?? 0 };
+    if (isUsingSqlite) {
+      const sDb = getSqliteInstance();
+      const { text, values } = parseSqliteParams(sql, params);
+      const stmt = sDb.prepare(text);
+      const info = stmt.run(...values);
+      return { rowCount: info.changes };
+    }
+    try {
+      const { text, values } = parseSqlAndParams(sql, params);
+      const res = await pool.query(text, values);
+      return { rowCount: res.rowCount ?? 0 };
+    } catch (err: any) {
+      if (handleDbError(err)) {
+        return this.execute(sql, ...params);
+      }
+      throw err;
+    }
   },
 
   async exec(sql: string): Promise<void> {
-    await pool.query(sql);
+    if (isUsingSqlite) {
+      const sDb = getSqliteInstance();
+      const statements = sql
+        .split(';')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      for (const stmtSql of statements) {
+        const { text } = parseSqliteParams(stmtSql, []);
+        sDb.exec(text);
+      }
+      return;
+    }
+    try {
+      await pool.query(sql);
+    } catch (err: any) {
+      if (handleDbError(err)) {
+        return this.exec(sql);
+      }
+      throw err;
+    }
   },
 
   async transaction<T>(callback: (client: any) => Promise<T>): Promise<T> {
+    if (isUsingSqlite) {
+      const sDb = getSqliteInstance();
+      const txClient = {
+        async query<R = any>(sql: string, ...params: any[]): Promise<R[]> {
+          const { text, values } = parseSqliteParams(sql, params);
+          return sDb.prepare(text).all(...values) as R[];
+        },
+        async queryOne<R = any>(sql: string, ...params: any[]): Promise<R | null> {
+          const { text, values } = parseSqliteParams(sql, params);
+          const rows = sDb.prepare(text).all(...values) as R[];
+          return rows.length > 0 ? rows[0] : null;
+        },
+        async execute(sql: string, ...params: any[]): Promise<{ rowCount: number }> {
+          const { text, values } = parseSqliteParams(sql, params);
+          const info = sDb.prepare(text).run(...values);
+          return { rowCount: info.changes };
+        },
+        prepare(sql: string) {
+          const { text } = parseSqliteParams(sql, []);
+          const stmt = sDb.prepare(text);
+          return {
+            async get(...params: any[]): Promise<any> {
+              const { values } = parseSqliteParams(sql, params);
+              return stmt.get(...values) || null;
+            },
+            async all(...params: any[]): Promise<any[]> {
+              const { values } = parseSqliteParams(sql, params);
+              return stmt.all(...values);
+            },
+            async run(...params: any[]): Promise<{ changes: number }> {
+              const { values } = parseSqliteParams(sql, params);
+              const info = stmt.run(...values);
+              return { changes: info.changes };
+            },
+          };
+        },
+      };
+
+      sDb.exec('BEGIN TRANSACTION');
+      try {
+        const res = await callback(txClient);
+        sDb.exec('COMMIT');
+        return res;
+      } catch (err) {
+        sDb.exec('ROLLBACK');
+        throw err;
+      }
+    }
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -167,8 +322,11 @@ export const db: DbClient = {
       const result = await callback(txClient);
       await client.query('COMMIT');
       return result;
-    } catch (err) {
+    } catch (err: any) {
       await client.query('ROLLBACK');
+      if (handleDbError(err)) {
+        return this.transaction(callback);
+      }
       throw err;
     } finally {
       client.release();
@@ -178,19 +336,15 @@ export const db: DbClient = {
   prepare(sql: string) {
     return {
       async get(...params: any[]): Promise<any> {
-        const { text, values } = parseSqlAndParams(sql, params);
-        const res = await pool.query(text, values);
-        return res.rows.length > 0 ? res.rows[0] : null;
+        const rows = await db.query(sql, ...params);
+        return rows.length > 0 ? rows[0] : null;
       },
       async all(...params: any[]): Promise<any[]> {
-        const { text, values } = parseSqlAndParams(sql, params);
-        const res = await pool.query(text, values);
-        return res.rows;
+        return db.query(sql, ...params);
       },
       async run(...params: any[]): Promise<{ changes: number }> {
-        const { text, values } = parseSqlAndParams(sql, params);
-        const res = await pool.query(text, values);
-        return { changes: res.rowCount ?? 0 };
+        const res = await db.execute(sql, ...params);
+        return { changes: res.rowCount };
       },
     };
   },
