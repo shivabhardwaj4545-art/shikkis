@@ -36,13 +36,20 @@ const NODE_ENV = process.env.NODE_ENV ?? 'development';
 // Run migrations/schema init synchronously before any requests are served
 initSchema();
 
-// ── Security ──────────────────────────────────────────────────────────────────
 app.use(
   helmet({
     contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: false,
   }),
 );
+
+// Remove any lingering CSP headers to allow Razorpay, Google GSI, and inline scripts
+app.use((_req, res, next) => {
+  res.removeHeader('Content-Security-Policy');
+  res.removeHeader('X-Content-Security-Policy');
+  next();
+});
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 const allowedOrigins = process.env.ALLOWED_ORIGINS

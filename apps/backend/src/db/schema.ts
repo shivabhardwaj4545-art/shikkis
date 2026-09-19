@@ -28,10 +28,11 @@ export function initSchema(): void {
 
 function seedIfEmpty(): void {
   try {
-    const orderCount = (db.prepare('SELECT COUNT(*) as cnt FROM orders').get() as any)?.cnt || 0;
-    if (orderCount > 0) return;
+    const userCount = (db.prepare('SELECT COUNT(*) as cnt FROM users').get() as any)?.cnt || 0;
+    const productCount = (db.prepare('SELECT COUNT(*) as cnt FROM products').get() as any)?.cnt || 0;
+    if (userCount > 0 && productCount > 0) return;
 
-    console.log('🌱 Empty catalog/orders detected. Seeding full catalog, banners, offers, orders & admin account...');
+    console.log('🌱 Empty catalog or users detected. Seeding full catalog, banners, offers, orders & admin account...');
     seedFullDatabase(db);
     console.log('✅ Full Database Seeding Complete!');
   } catch (err) {
