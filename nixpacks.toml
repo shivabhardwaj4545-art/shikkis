@@ -1,0 +1,14 @@
+﻿[providers]
+providers = ["node"]
+
+[phases.setup]
+nixPkgs = ["nodejs_20", "python3", "gcc", "gnumake"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npm run build:all"]
+
+[start]
+cmd = "npm run start --workspace=apps/backend"
