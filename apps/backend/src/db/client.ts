@@ -301,12 +301,11 @@ function getSqliteInstance() {
     console.log(`📦 Fallback SQLite Database initialized at ${dbPath}`);
 
     try {
-      const stmts = FALLBACK_SCHEMA_SQL.split(';').map(s => s.trim()).filter(s => s.length > 0);
-      for (const s of stmts) {
-        const { text } = parseSqliteParams(s, []);
-        if (text) sqliteDb.exec(text);
-      }
-      console.log('✅ SQLite fallback schema tables initialized.');
+      const cleanSql = FALLBACK_SCHEMA_SQL
+        .replace(/\bTIMESTAMPTZ\b/gi, 'TEXT')
+        .replace(/\bBIGINT\b/gi, 'INTEGER');
+      sqliteDb.exec(cleanSql);
+      console.log('✅ SQLite fallback schema tables initialized successfully.');
     } catch (e: any) {
       console.error('Error auto-creating SQLite tables:', e?.message || e);
     }
