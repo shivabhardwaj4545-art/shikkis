@@ -198,8 +198,8 @@ describe('Admin Security & Management API (/api/admin/*)', () => {
           value: 15,
           max_discount: 150000,
           min_cart_value: 200000,
-          starts_at: '2026-01-01T00:00:00Z',
-          ends_at: '2026-12-31T23:59:59Z',
+          starts_at: new Date(Date.now() - 86400000).toISOString(),
+          ends_at: new Date(Date.now() + 86400000 * 30).toISOString(),
           is_active: true,
           scope: 'all',
           scope_ids: [],
@@ -246,6 +246,54 @@ describe('Admin Security & Management API (/api/admin/*)', () => {
         expect(reorderRes.status).toBe(200);
         expect(reorderRes.body.success).toBe(true);
       }
+    });
+    it('allows owner to create, update, and delete a banner', async () => {
+      // Create banner
+      const createRes = await request(app)
+        .post('/api/admin/banners')
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({
+          title: 'Test Banner Title',
+          subtitle: 'Test Banner Subtitle',
+          image_url: 'https://example.com/banner.jpg',
+          cta_text: 'Shop Now',
+          cta_link: '/catalog',
+        });
+
+      expect(createRes.status).toBe(201);
+      const bannerId = createRes.body.banner_id;
+      expect(bannerId).toBeDefined();
+
+      // Update banner (PATCH)
+      const updateRes = await request(app)
+        .patch(`/api/admin/banners/${bannerId}`)
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({
+          title: 'Updated Banner Title',
+          subtitle: 'Updated Subtitle',
+          image_url: 'https://example.com/updated.jpg',
+          cta_text: 'Explore New',
+          cta_link: '/catalog?category=new',
+          is_active: true,
+        });
+
+      expect(updateRes.status).toBe(200);
+      expect(updateRes.body.success).toBe(true);
+
+      // Verify updated values via GET
+      const listRes = await request(app)
+        .get('/api/admin/banners')
+        .set('Authorization', `Bearer ${ownerToken}`);
+
+      const updatedBanner = listRes.body.data.find((b: any) => b.id === bannerId);
+      expect(updatedBanner).toBeDefined();
+      expect(updatedBanner.title).toBe('Updated Banner Title');
+      expect(updatedBanner.image_url).toBe('https://example.com/updated.jpg');
+
+      // Cleanup
+      await request(app)
+        .delete(`/api/admin/banners/${bannerId}`)
+        .set('Authorization', `Bearer ${ownerToken}`);
     });
   });
 });

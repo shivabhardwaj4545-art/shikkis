@@ -1139,6 +1139,58 @@ adminRouter.put('/banners/reorder', (req, res, next) => {
 });
 
 /**
+ * PATCH /api/admin/banners/:id
+ * Update an existing carousel banner
+ */
+adminRouter.patch('/banners/:id', (req, res, next) => {
+  try {
+    const db = getDb();
+    const { id } = req.params;
+    const {
+      title,
+      subtitle,
+      image_url,
+      cta_text = 'Shop Collection',
+      cta_link = '/catalog',
+      starts_at,
+      ends_at,
+      is_active = true,
+    } = req.body;
+
+    if (!title || !image_url) {
+      res.status(400).json({ error: { code: 'INVALID_INPUT', message: 'Title and image URL are required.' } });
+      return;
+    }
+
+    const result = db.prepare(`
+      UPDATE banners
+      SET title = ?, subtitle = ?, image_url = ?, cta_text = ?, cta_link = ?,
+          starts_at = ?, ends_at = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      title,
+      subtitle || null,
+      image_url,
+      cta_text,
+      cta_link,
+      starts_at || null,
+      ends_at || null,
+      is_active ? 1 : 0,
+      id,
+    );
+
+    if (result.changes === 0) {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Banner not found' } });
+      return;
+    }
+
+    res.json({ success: true, message: 'Banner updated successfully' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * DELETE /api/admin/banners/:id
  * Delete banner
  */

@@ -478,6 +478,13 @@ export const api = {
     });
   },
 
+  adminUpdateBanner: (id: string, data: any) => {
+    return request<{ success: boolean; message: string }>(`/admin/banners/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
   // ── Part 4: Orders Management ──────────────────────────────────────────────
   adminGetOrders: (params?: {
     page?: number | undefined;
