@@ -74,6 +74,7 @@ app.use(
     max: 200,
     standardHeaders: true,
     legacyHeaders: false,
+    validate: { trustProxy: false },
     message: { error: { code: 'RATE_LIMITED', message: 'Too many requests, slow down.' } },
   }),
 );
@@ -81,9 +82,10 @@ app.use(
 // Stricter rate limit on auth endpoints
 const authLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: NODE_ENV === 'production' ? 10 : 100,
+  max: NODE_ENV === 'production' ? 50 : 100,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { trustProxy: false },
   message: {
     error: { code: 'RATE_LIMITED', message: 'Too many auth attempts. Try again in a minute.' },
   },
@@ -92,9 +94,10 @@ const authLimiter = rateLimit({
 // Stricter rate limit on coupon validation endpoints to prevent brute-forcing
 const couponLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: NODE_ENV === 'production' ? 15 : 100,
+  max: NODE_ENV === 'production' ? 50 : 100,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { trustProxy: false },
   message: {
     error: { code: 'RATE_LIMITED', message: 'Too many coupon attempts. Try again later.' },
   },
