@@ -39,16 +39,39 @@ initSchema();
 // ── Security ──────────────────────────────────────────────────────────────────
 app.use(
   helmet({
-    // CSP disabled for local dev; enable + tighten in production
-    contentSecurityPolicy: NODE_ENV === 'production',
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: [
+          "'self'",
+          "'unsafe-inline'",
+          "'unsafe-eval'",
+          'https://checkout.razorpay.com',
+          'https://accounts.google.com',
+        ],
+        scriptSrcElem: [
+          "'self'",
+          "'unsafe-inline'",
+          'https://checkout.razorpay.com',
+          'https://accounts.google.com',
+        ],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https:'],
+        imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+        connectSrc: ["'self'", 'https:', 'wss:'],
+        frameSrc: ["'self'", 'https://api.razorpay.com', 'https://checkout.razorpay.com', 'https://accounts.google.com'],
+        fontSrc: ["'self'", 'data:', 'https:'],
+        objectSrc: ["'none'"],
+        upgradeInsecureRequests: null,
+      },
+    },
+    crossOriginEmbedderPolicy: false,
   }),
 );
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
-const allowedOrigins =
-  NODE_ENV === 'production'
-    ? (process.env.ALLOWED_ORIGINS ?? '').split(',').map((o) => o.trim())
-    : true; // Allow all in dev
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
+  : true; // Allow request origin in dev & single-origin prod
 
 app.use(
   cors({
