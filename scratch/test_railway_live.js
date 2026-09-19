@@ -17,15 +17,13 @@ function fetchUrl(url) {
 }
 
 async function testLive() {
-  console.log('Testing live Railway health endpoint...');
+  console.log('Triggering live database seed...');
   try {
-    const health = await fetchUrl('https://shikkis-production-b372.up.railway.app/api/health');
-    console.log('Health status:', health.status);
-    console.log('Health response:', JSON.stringify(health.json || health.raw, null, 2));
+    const seed = await fetchUrl('https://shikkis-production-b372.up.railway.app/api/health/seed');
+    console.log('Seed response:', seed.status, JSON.stringify(seed.json || seed.raw, null, 2));
 
-    const categories = await fetchUrl('https://shikkis-production-b372.up.railway.app/api/categories');
-    console.log('Categories status:', categories.status);
-    console.log('Categories response:', JSON.stringify(categories.json || categories.raw, null, 2));
+    const health = await fetchUrl('https://shikkis-production-b372.up.railway.app/api/health');
+    console.log('Health response:', health.status, JSON.stringify(health.json || health.raw, null, 2));
   } catch (e) {
     console.error('Error fetching:', e.message);
   }
