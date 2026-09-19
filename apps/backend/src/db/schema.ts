@@ -13,15 +13,30 @@ const __dirname = path.dirname(__filename);
 import { seedFullDatabase } from './seedFull.js';
 
 export function initSchema(): void {
-  let schemaPath = path.resolve(__dirname, 'schema.sql');
-  if (!fs.existsSync(schemaPath)) {
-    schemaPath = path.resolve(__dirname, '../../../src/db/schema.sql');
+  const possiblePaths = [
+    path.resolve(__dirname, 'schema.sql'),
+    path.resolve(__dirname, 'db/schema.sql'),
+    path.resolve(__dirname, '../db/schema.sql'),
+    path.resolve(__dirname, '../../src/db/schema.sql'),
+    path.resolve(__dirname, '../../../src/db/schema.sql'),
+    path.resolve(process.cwd(), 'apps/backend/src/db/schema.sql'),
+    path.resolve(process.cwd(), 'src/db/schema.sql'),
+  ];
+
+  let schemaSql = '';
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) {
+      console.log(`📋 Loading database schema from: ${p}`);
+      schemaSql = fs.readFileSync(p, 'utf8');
+      break;
+    }
   }
-  if (!fs.existsSync(schemaPath)) {
-    schemaPath = path.resolve(__dirname, '../../src/db/schema.sql');
+
+  if (schemaSql) {
+    db.exec(schemaSql);
+  } else {
+    console.warn('⚠️ schema.sql file not found in build paths!');
   }
-  const schemaSql = fs.readFileSync(schemaPath, 'utf8');
-  db.exec(schemaSql);
 
   seedIfEmpty();
 }
