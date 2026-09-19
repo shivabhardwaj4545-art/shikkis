@@ -6,6 +6,7 @@ import {
   Check,
   CheckSquare,
   History,
+  Plus,
   RefreshCw,
   Search,
   Square,
@@ -14,7 +15,7 @@ import {
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
-import { api, type AdminAuditLogItem, type AdminInventoryItem } from '@/lib/api';
+import { api, type AdminAuditLogItem, type AdminInventoryItem, type ProductItem } from '@/lib/api';
 
 export const AdminInventoryPage: React.FC = () => {
   const [items, setItems] = useState<AdminInventoryItem[]>([]);
@@ -40,6 +41,18 @@ export const AdminInventoryPage: React.FC = () => {
   const [auditDrawerOpen, setAuditDrawerOpen] = useState(false);
   const [loadingAudit, setLoadingAudit] = useState(false);
 
+  // Add New Inventory Variant Modal State
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [addLoading, setAddLoading] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [productsList, setProductsList] = useState<ProductItem[]>([]);
+  const [selectedProductId, setSelectedProductId] = useState('');
+  const [sizeInput, setSizeInput] = useState('M');
+  const [colorInput, setColorInput] = useState('Royal Navy');
+  const [stockInput, setStockInput] = useState<number>(10);
+  const [skuInput, setSkuInput] = useState('');
+  const [priceOverrideInput, setPriceOverrideInput] = useState('');
+
   const fetchInventory = async () => {
     try {
       setLoading(true);
@@ -64,6 +77,81 @@ export const AdminInventoryPage: React.FC = () => {
   useEffect(() => {
     fetchInventory();
   }, [page, search, lowStockOnly, sortOrder]);
+
+  // Load products list for Add Inventory dropdown
+  const loadProductsList = async () => {
+    try {
+      const res = await api.getProducts({ limit: 100 });
+      setProductsList(res.data || []);
+      if (res.data && res.data.length > 0 && !selectedProductId) {
+        setSelectedProductId(res.data[0].id);
+      }
+    } catch (err) {
+      console.error('Failed to load products list:', err);
+    }
+  };
+
+  const openAddInventoryModal = () => {
+    setAddError(null);
+    setAddModalOpen(true);
+    loadProductsList();
+  };
+
+  // Auto-generate SKU when product, size, or color changes
+  useEffect(() => {
+    if (!selectedProductId) return;
+    const prod = productsList.find((p) => p.id === selectedProductId);
+    if (prod && prod.sku) {
+      const cleanSize = (sizeInput || 'FREE').toUpperCase().replace(/\s+/g, '');
+      const cleanColor = (colorInput || 'DEFAULT').toUpperCase().replace(/\s+/g, '');
+      setSkuInput(`${prod.sku}-${cleanSize}-${cleanColor}`);
+    }
+  }, [selectedProductId, sizeInput, colorInput, productsList]);
+
+  const handleAddInventorySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProductId) {
+      setAddError('Please select a product.');
+      return;
+    }
+    if (!sizeInput.trim()) {
+      setAddError('Size is required.');
+      return;
+    }
+    if (!colorInput.trim()) {
+      setAddError('Colour is required.');
+      return;
+    }
+    if (stockInput < 0) {
+      setAddError('Stock quantity cannot be negative.');
+      return;
+    }
+
+    try {
+      setAddLoading(true);
+      setAddError(null);
+
+      const pricePaise = priceOverrideInput ? Math.round(parseFloat(priceOverrideInput) * 100) : undefined;
+
+      const res = await api.adminAddInventoryVariant({
+        product_id: selectedProductId,
+        size: sizeInput.trim(),
+        color: colorInput.trim(),
+        stock: stockInput,
+        variant_sku: skuInput.trim() || undefined,
+        price_override: pricePaise,
+      });
+
+      setSuccessNotice(res.message || 'Successfully added new inventory item.');
+      setTimeout(() => setSuccessNotice(null), 4000);
+      setAddModalOpen(false);
+      await fetchInventory();
+    } catch (err: any) {
+      setAddError(err?.message || 'Failed to add inventory item.');
+    } finally {
+      setAddLoading(false);
+    }
+  };
 
   // Selection
   const handleSelectAll = () => {
@@ -120,11 +208,20 @@ export const AdminInventoryPage: React.FC = () => {
         <div>
           <h1 className="font-serif text-3xl font-bold text-text">Inventory Management</h1>
           <p className="text-xs text-text-muted mt-1">
-            Track variant-level boutique inventory, identify low stock warnings, and run batch restocks.
+            Track variant-level boutique inventory, identify low stock warnings, add new stock, and run batch restocks.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
+          {/* + Add Inventory Button */}
+          <button
+            onClick={openAddInventoryModal}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-brand-crimson text-white text-xs font-semibold shadow hover:bg-brand-crimson/90 transition-colors"
+          >
+            <Plus size={15} />
+            <span>Add Inventory Item</span>
+          </button>
+
           <button
             onClick={openAuditLogs}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border bg-surface text-xs font-medium text-text hover:bg-surface-alt transition-colors"
@@ -136,7 +233,7 @@ export const AdminInventoryPage: React.FC = () => {
           {selectedVariantIds.length > 0 && (
             <button
               onClick={() => setBatchModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-crimson text-white text-xs font-semibold shadow hover:bg-brand-crimson/90 transition-colors"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-gold text-text-dark text-xs font-semibold shadow hover:opacity-90 transition-colors"
             >
               <span>Batch Update ({selectedVariantIds.length})</span>
             </button>
@@ -362,6 +459,207 @@ export const AdminInventoryPage: React.FC = () => {
         </div>
       )}
 
+      {/* ── Add New Inventory Variant Item Modal ────────────────────────────── */}
+      <AnimatePresence>
+        {addModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="max-w-lg w-full bg-surface border border-border rounded-xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between border-b border-border pb-3">
+                <div className="flex items-center gap-2 text-brand-crimson">
+                  <Warehouse size={20} />
+                  <h3 className="font-serif text-lg font-bold text-text">Add New Inventory Item</h3>
+                </div>
+                <button onClick={() => setAddModalOpen(false)} className="p-1 rounded text-text-muted hover:text-text">
+                  <X size={18} />
+                </button>
+              </div>
+
+              {addError && (
+                <div className="p-3 rounded-lg bg-danger/10 border border-danger/30 text-danger text-xs flex items-center gap-2">
+                  <AlertCircle size={15} />
+                  <span>{addError}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleAddInventorySubmit} className="space-y-4">
+                {/* Product Selector */}
+                <div>
+                  <label className="block text-xs font-semibold text-text mb-1">
+                    Select Product <span className="text-brand-crimson">*</span>
+                  </label>
+                  <select
+                    value={selectedProductId}
+                    onChange={(e) => setSelectedProductId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-xs text-text focus:outline-hidden focus:border-brand-gold"
+                    required
+                  >
+                    {productsList.length === 0 ? (
+                      <option value="">Loading products...</option>
+                    ) : (
+                      productsList.map((prod) => (
+                        <option key={prod.id} value={prod.id}>
+                          {prod.name} ({prod.sku})
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+
+                {/* Size & Colour */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-text mb-1">
+                      Size <span className="text-brand-crimson">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={sizeInput}
+                      onChange={(e) => setSizeInput(e.target.value)}
+                      placeholder="e.g. S, M, L, XL, Free Size"
+                      className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-xs text-text focus:outline-hidden focus:border-brand-gold"
+                      required
+                    />
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {['XS', 'S', 'M', 'L', 'XL', 'XXL', 'Free Size'].map((sz) => (
+                        <button
+                          key={sz}
+                          type="button"
+                          onClick={() => setSizeInput(sz)}
+                          className={`px-1.5 py-0.5 rounded text-[10px] border transition-colors ${
+                            sizeInput === sz
+                              ? 'bg-brand-crimson text-white border-brand-crimson font-semibold'
+                              : 'bg-bg text-text-muted border-border hover:text-text'
+                          }`}
+                        >
+                          {sz}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-text mb-1">
+                      Colour <span className="text-brand-crimson">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={colorInput}
+                      onChange={(e) => setColorInput(e.target.value)}
+                      placeholder="e.g. Midnight Navy, Emerald Gold"
+                      className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-xs text-text focus:outline-hidden focus:border-brand-gold"
+                      required
+                    />
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {['Midnight Navy', 'Emerald Gold', 'Indigo White', 'Royal Black', 'Mustard Yellow'].map((clr) => (
+                        <button
+                          key={clr}
+                          type="button"
+                          onClick={() => setColorInput(clr)}
+                          className={`px-1.5 py-0.5 rounded text-[10px] border transition-colors ${
+                            colorInput === clr
+                              ? 'bg-brand-gold text-text-dark font-semibold border-brand-gold'
+                              : 'bg-bg text-text-muted border-border hover:text-text'
+                          }`}
+                        >
+                          {clr}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Variant SKU */}
+                <div>
+                  <label className="block text-xs font-semibold text-text mb-1">
+                    Variant SKU Code (Auto-Generated)
+                  </label>
+                  <input
+                    type="text"
+                    value={skuInput}
+                    onChange={(e) => setSkuInput(e.target.value)}
+                    placeholder="SHK-PROD-SIZE-COLOR"
+                    className="w-full px-3 py-2 rounded-lg bg-bg border border-border font-mono text-xs text-text focus:outline-hidden focus:border-brand-gold"
+                  />
+                </div>
+
+                {/* Initial Stock & Price Override */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-text mb-1">
+                      Initial Stock Quantity <span className="text-brand-crimson">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={stockInput}
+                      onChange={(e) => setStockInput(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-full px-3 py-2 rounded-lg bg-bg border border-border font-mono font-bold text-sm text-text focus:outline-hidden focus:border-brand-gold"
+                      required
+                    />
+                    <div className="flex gap-1.5 mt-1.5">
+                      {[5, 10, 25, 50].map((qty) => (
+                        <button
+                          key={qty}
+                          type="button"
+                          onClick={() => setStockInput(qty)}
+                          className="px-2 py-0.5 rounded text-[10px] bg-bg border border-border text-text-muted hover:text-text font-mono"
+                        >
+                          +{qty}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-text mb-1">
+                      Price Override (₹, Optional)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={priceOverrideInput}
+                      onChange={(e) => setPriceOverrideInput(e.target.value)}
+                      placeholder="e.g. 4999.00"
+                      className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-xs text-text focus:outline-hidden focus:border-brand-gold"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-3 border-t border-border">
+                  <button
+                    type="button"
+                    onClick={() => setAddModalOpen(false)}
+                    className="flex-1 py-2.5 rounded-lg border border-border text-xs font-medium text-text hover:bg-surface-alt"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={addLoading}
+                    className="flex-1 py-2.5 rounded-lg bg-brand-crimson text-white text-xs font-semibold shadow hover:bg-brand-crimson/90 disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+                  >
+                    {addLoading ? (
+                      'Saving Inventory...'
+                    ) : (
+                      <>
+                        <Plus size={15} />
+                        <span>Add Inventory Item</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* ── Batch Stock Update Modal ────────────────────────────────────────── */}
       <AnimatePresence>
         {batchModalOpen && (
@@ -476,7 +774,7 @@ export const AdminInventoryPage: React.FC = () => {
                         <span>Stock:</span>
                         <span className="line-through">{log.changes?.old_stock}</span>
                         <span className="text-brand-crimson">&rarr;</span>
-                        <strong className="text-text">{log.changes?.new_stock}</strong>
+                        <strong className="text-text">{log.changes?.new_stock || log.changes?.initial_stock}</strong>
                       </div>
                       <div className="text-[10px] text-text-muted pt-1 border-t border-border/50">
                         Adjusted by: {log.first_name || 'Vikram'} ({log.email || 'owner@shikkis.com'})

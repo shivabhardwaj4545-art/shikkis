@@ -427,6 +427,24 @@ export const api = {
     );
   },
 
+  adminAddInventoryVariant: (data: {
+    product_id: string;
+    size: string;
+    color: string;
+    stock: number;
+    variant_sku?: string | undefined;
+    price_override?: number | undefined;
+    weight_grams?: number | undefined;
+  }) => {
+    return request<{ success: boolean; variant_id: string; message: string }>(
+      '/admin/inventory/variant',
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
   adminGetInventoryAuditLogs: () => {
     return request<{ data: AdminAuditLogItem[] }>('/admin/inventory/audit-log');
   },

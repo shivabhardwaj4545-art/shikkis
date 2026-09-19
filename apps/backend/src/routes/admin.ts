@@ -762,6 +762,91 @@ adminRouter.post('/inventory/batch', async (req, res, next) => {
 });
 
 /**
+ * POST /api/admin/inventory/variant
+ * Add a new variant / inventory stock item to a product
+ */
+adminRouter.post('/inventory/variant', async (req, res, next) => {
+  try {
+    const db = getDb();
+    const { product_id, size, color, stock, variant_sku, price_override, weight_grams } = req.body;
+
+    if (!product_id || !size || !color || typeof stock !== 'number' || stock < 0) {
+      res.status(400).json({
+        error: { code: 'INVALID_INPUT', message: 'product_id, size, color, and non-negative stock are required.' },
+      });
+      return;
+    }
+
+    const product = await db.queryOne<{ id: string; sku: string }>('SELECT id, sku FROM products WHERE id = ?', product_id);
+    if (!product) {
+      res.status(404).json({
+        error: { code: 'PRODUCT_NOT_FOUND', message: 'Selected product does not exist.' },
+      });
+      return;
+    }
+
+    const cleanSize = size.trim();
+    const cleanColor = color.trim();
+    const generatedSku = (variant_sku?.trim() || `${product.sku}-${cleanSize.toUpperCase().replace(/\s+/g, '')}-${cleanColor.toUpperCase().replace(/\s+/g, '')}`).replace(/[^A-Za-z0-9_-]/g, '');
+    const variantId = `var_${uuidv4().slice(0, 8)}`;
+
+    const existing = await db.queryOne('SELECT id FROM product_variants WHERE product_id = ? AND LOWER(size) = LOWER(?) AND LOWER(color) = LOWER(?)', product_id, cleanSize, cleanColor);
+    if (existing) {
+      res.status(400).json({
+        error: { code: 'VARIANT_EXISTS', message: `Variant with size '${cleanSize}' and color '${cleanColor}' already exists for this product.` },
+      });
+      return;
+    }
+
+    await db.execute(
+      `INSERT INTO product_variants (id, product_id, size, color, variant_sku, price_override, stock, weight_grams, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      variantId,
+      product_id,
+      cleanSize,
+      cleanColor,
+      generatedSku,
+      price_override ? Number(price_override) : null,
+      stock,
+      weight_grams ? Number(weight_grams) : 500
+    );
+
+    // Write audit trail entry
+    await db.execute(
+      `INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, changes, ip_address)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `aud_${uuidv4()}`,
+      req.user?.sub || null,
+      'ADD_INVENTORY_VARIANT',
+      'product_variant',
+      variantId,
+      JSON.stringify({
+        product_id,
+        variant_sku: generatedSku,
+        size: cleanSize,
+        color: cleanColor,
+        initial_stock: stock,
+      }),
+      req.ip
+    );
+
+    res.status(201).json({
+      success: true,
+      variant_id: variantId,
+      message: `Successfully added new inventory item '${generatedSku}' with stock ${stock}.`,
+    });
+  } catch (err: any) {
+    if (err.message?.includes('UNIQUE constraint failed') || err.message?.includes('duplicate key')) {
+      res.status(400).json({
+        error: { code: 'DUPLICATE_SKU', message: 'Variant SKU already exists. Please provide a unique SKU code.' },
+      });
+      return;
+    }
+    next(err);
+  }
+});
+
+/**
  * GET /api/admin/inventory/audit-log
  * Recent inventory audit logs
  */
